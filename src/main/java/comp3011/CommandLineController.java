@@ -4,7 +4,7 @@
  * 
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. <student name and student number insert here upon modification>
+ *   2. Bailey Staykov, a1886621
  *
  * Copyright 2026 Simon Ratcliffe
  */
@@ -32,6 +32,7 @@ public class CommandLineController {
     private Integer displayId;
     private File videoFile;
     private String errorMessage;
+    private final List<FrameEffect> effects = new ArrayList<>();
 
     public CommandLineController(String[] args) {
         this.args = args.clone();
@@ -60,6 +61,11 @@ public class CommandLineController {
         return displayId;
     }
 
+    public List<FrameEffect> getFrameEffects() {
+        // Return immutable list
+        return List.copyOf(effects);
+    }
+
     public boolean isAudioRequested() {
         return audioRequested;
     }
@@ -75,7 +81,10 @@ public class CommandLineController {
     private void parse() {
         List<String> videoFiles = new ArrayList<>();
         for (String arg : args) {
-            if ("-h".equals(arg) || "--help".equals(arg)) {
+            List<FrameEffect> effects = FrameEffect.parseArgs(arg);
+            if (!effects.isEmpty()) {
+                this.effects.addAll(effects);
+            } else if ("-h".equals(arg) || "--help".equals(arg)) {
                 helpRequested = true;
             } else if ("-a".equals(arg) || "--audio".equals(arg)) {
                 audioRequested = true;
@@ -124,5 +133,23 @@ public class CommandLineController {
         System.out.println("  -x, --maximise     Open the player maximised");
         System.out.println("  -1, --monitor-1    Open the player on display 1");
         System.out.println("  -2, --monitor-2    Open the player on display 2");
+        System.out.println();
+        System.out.println("Frame processors:");
+        System.out.println("  -n, --number-frames    Render the frame number onto each frame");
+        System.out.println("  -s, --scratch-frames   Render vertical film scratches");
+        System.out.println("  -f, --flicker-frames   Randomly dim frames");
+        System.out.println("  -w, --black-and-white  Convert frames to black and white");
+        System.out.println("  -y, --yellow-frames    Apply a warmer colour temperature");
+        System.out.println("  -v, --vignette-frames  Darken the frame edges");
+        System.out.println("  -d, --dust-frames      Render dust and hair marks");
+        System.out.println("  -j, --jitter-frames    Randomly displace frames by a few pixels");
+        System.out.println("  -m, --mottle-frames    Add cloudy emulsion mottling");
+        System.out.println("  -b, --bleed-frames     Bleed light into frames");
+        System.out.println("  -p, --pepper-frames    Pepper frames with dark spots/blotches");
+        System.out.println();
+        System.out.println("Frame processors are applied in command-line order and may be repeated.");
+        System.out.println("Example: -nssnfwyvdjmbp numbers, scratches twice, numbers again, flickers,");
+        System.out.println("converts, warms, vignettes, dusts, jitters, mottles, bleeds, then peppers.");
+
     }
 }
