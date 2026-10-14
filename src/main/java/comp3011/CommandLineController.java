@@ -80,22 +80,18 @@ public class CommandLineController {
 
     private void parse() {
         List<String> videoFiles = new ArrayList<>();
+
         for (String arg : args) {
-            List<FrameEffect> effects = FrameEffect.parseArgs(arg);
-            if (!effects.isEmpty()) {
-                this.effects.addAll(effects);
-            } else if ("-h".equals(arg) || "--help".equals(arg)) {
-                helpRequested = true;
-            } else if ("-a".equals(arg) || "--audio".equals(arg)) {
-                audioRequested = true;
-            } else if ("-x".equals(arg) || "--maximise".equals(arg)) {
-                maximiseRequested = true;
-            } else if ("-1".equals(arg) || "--monitor-1".equals(arg)) {
-                setDisplayId(1);
-            } else if ("-2".equals(arg) || "--monitor-2".equals(arg)) {
-                setDisplayId(2);
+            if (arg.startsWith("--")) {
+                parseOption(arg);
             } else if (arg.startsWith("-")) {
-                errorMessage = "Unknown option: " + arg;
+                if (arg.length() == 1) {
+                    errorMessage = "Unknown option: " + arg;
+                } else {
+                    for (int i = 1; i < arg.length(); i++) {
+                        parseOption("-" + arg.charAt(i));
+                    }
+                }
             } else {
                 videoFiles.add(arg);
             }
@@ -105,14 +101,31 @@ public class CommandLineController {
             errorMessage = "Usage: VideoPlayer [options] [video-file]";
         } else if (videoFiles.size() == 1) {
             videoFile = new File(videoFiles.get(0));
+
             if (!videoFile.isFile()) {
                 errorMessage = "File not found: " + videoFile.getPath();
                 videoFile = null;
             }
-        } else {
-            if (!helpRequested) {
-                errorMessage = "No video file specified.";
-            }
+        } else if (!helpRequested && errorMessage == null) {
+            errorMessage = "No video file specified.";
+        }
+    }
+
+    private void parseOption(String option) {
+        List<FrameEffect> parsedEffects = FrameEffect.parseArgs(option);
+
+        if (!parsedEffects.isEmpty()) {
+            effects.addAll(parsedEffects);
+            return;
+        }
+
+        switch (option) {
+            case "-h", "--help" -> helpRequested = true;
+            case "-a", "--audio" -> audioRequested = true;
+            case "-x", "--maximise" -> maximiseRequested = true;
+            case "-1", "--monitor-1" -> setDisplayId(1);
+            case "-2", "--monitor-2" -> setDisplayId(2);
+            default -> errorMessage = "Unknown option: " + option;
         }
     }
 

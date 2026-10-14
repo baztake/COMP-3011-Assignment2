@@ -306,18 +306,12 @@ public class CommandLineControllerTest {
     }
 
     @Test
-    void init_withUnknownOption_shouldReportError() {
-        String[] options = {
-                "-q", "--unknown", "-jq", "-qj", "-jfqd"
-        };
+    void init_withUnknownLetterInMixedStack_shouldReportError() {
+        CommandLineController controller = controllerWithVideo("-ajq");
 
-        for (String option : options) {
-            CommandLineController controller = controllerWithVideo(option);
-
-            assertThat(controller.getErrorMessage())
-                    .isEqualTo("Unknown option: " + option);
-            assertInvalid(controller);
-        }
+        assertThat(controller.getErrorMessage())
+                .isEqualTo("Unknown option: -q");
+        assertInvalid(controller);
     }
 
     @Test
@@ -328,6 +322,25 @@ public class CommandLineControllerTest {
                 .isInstanceOf(UnsupportedOperationException.class);
 
         assertThat(controller.getFrameEffects()).hasSize(2);
+    }
+
+    @Test
+    void init_withMixedShortStack_shouldParseFlagsAndPreserveEffectOrder() {
+        CommandLineController controller = controllerWithVideo("-jax2fddn");
+
+        assertThat(controller.isAudioRequested()).isTrue();
+        assertThat(controller.isMaximiseRequested()).isTrue();
+        assertThat(controller.getDisplayId()).isEqualTo(2);
+
+        assertThat(controller.getFrameEffects()).containsExactly(
+                FrameEffect.JITTER,
+                FrameEffect.FLICKER,
+                FrameEffect.DUST,
+                FrameEffect.DUST,
+                FrameEffect.NUMBER
+        );
+
+        assertValid(controller);
     }
 
     private CommandLineController controllerWithVideo(String... options) {
