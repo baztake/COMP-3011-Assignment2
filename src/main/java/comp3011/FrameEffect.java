@@ -3,11 +3,21 @@
  */
 package comp3011;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * An enum representing the different frame effects that can be applied to a video.
+ * Available frame effects and their command-line aliases.
+ *
+ * <p>To add an effect:</p>
+ * <ol>
+ *     <li>Implement a FrameProcessor subclass.</li>
+ *     <li>Add an enum constant with unique short and long options.</li>
+ *     <li>Add its construction case to createProcessor().</li>
+ *     <li>Add its description to CommandLineController.printHelp().</li>
+ *     <li>Update alias, construction and help-output regression tests.</li>
+ * </ol>
+ *
+ * <p>CommandLineController preserves selection order and repetitions.
+ * VideoPlayerModel constructs and owns the resulting processor chain.
+ * Each selection creates a separate processor instance.</p>
  */
 public enum FrameEffect {
     NUMBER('n', "number-frames"),
@@ -31,44 +41,38 @@ public enum FrameEffect {
     }
 
     /**
-     * Parses a command-line argument string and returns a list of FrameEffect enums corresponding to the specified options.
+     * Identifies one short or long effect option.
      *
-     * @param arg the command-line argument string to parse
-     * @return a list of FrameEffect enums corresponding to the specified options
+     * @param option the option to check
+     * @return the matching effect, or null if the option is not recognised
      */
-    public static List<FrameEffect> parseArgs(String arg) {
-        List<FrameEffect> parsedEffects = new ArrayList<>();
-        if (arg == null || !arg.startsWith("-")) {
-            return parsedEffects;
-        }
-
-        if (arg.startsWith("--")) {
-            for (FrameEffect effect : values()) {
-                if (arg.equals("--" + effect.longOption)) {
-                    parsedEffects.add(effect);
-                    return parsedEffects;
-                }
+    public static FrameEffect fromOption(String option) {
+        for (FrameEffect effect : values()) {
+            if (("-" + effect.shortOption).equals(option)
+                    || ("--" + effect.longOption).equals(option)) {
+                return effect;
             }
-            return parsedEffects;
         }
+        return null;
+    }
 
-        for (int i = 1; i < arg.length(); i++) {
-            char option = arg.charAt(i);
-            FrameEffect matched = null;
-
-            for (FrameEffect effect : values()) {
-                if (effect.shortOption == option) {
-                    matched = effect;
-                    break;
-                }
-            }
-
-            if (matched == null) {
-                return List.of();
-            }
-            parsedEffects.add(matched);
-        }
-
-        return parsedEffects;
+    /**
+     * Creates a new processor for this occurrence of the effect.
+     * Repeated selections must receive separate processor instances.
+     */
+    public FrameProcessor createProcessor() {
+        return switch (this) {
+            case NUMBER -> new FrameNumberer();
+            case SCRATCH -> new FrameScratcher();
+            case FLICKER -> new FrameFlickerer();
+            case BLACK_AND_WHITE -> new FrameBlackAndWhiter();
+            case YELLOW -> new FrameYellower();
+            case VIGNETTE -> new FrameVignetter();
+            case DUST -> new FrameDuster();
+            case JITTER -> new FrameJitterer();
+            case MOTTLE -> new FrameMottler();
+            case BLEED -> new FrameBleeder();
+            case PEPPER -> new FramePepperer();
+        };
     }
 }

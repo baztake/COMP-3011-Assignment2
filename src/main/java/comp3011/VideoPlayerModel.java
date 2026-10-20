@@ -91,7 +91,7 @@ public class VideoPlayerModel {
 
     public VideoPlayerModel(
             boolean audioEnabled,
-            List<FrameProcessor> frameProcessors,
+            List<FrameEffect> frameEffects,
             BiConsumer<Integer, Integer> videoSizeChangedHandler,
             Consumer<Image> frameReadyHandler,
             Consumer<String> statusChangedHandler,
@@ -99,7 +99,9 @@ public class VideoPlayerModel {
             Consumer<Boolean> audioOutputStateChangedHandler
     ) {
         audioOutputEnabled = audioEnabled;
-        this.frameProcessors = frameProcessors;
+        this.frameProcessors = frameEffects.stream()
+                .map(FrameEffect::createProcessor)
+                .toList();
         this.videoSizeChangedHandler = videoSizeChangedHandler;
         this.frameReadyHandler = frameReadyHandler;
         this.statusChangedHandler = statusChangedHandler;

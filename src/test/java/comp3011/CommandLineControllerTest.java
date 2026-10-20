@@ -8,8 +8,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -341,6 +343,65 @@ public class CommandLineControllerTest {
         );
 
         assertValid(controller);
+    }
+
+    @Test
+    void init_withHelp_shouldPrintRequiredHelpText() {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        PrintStream originalOut = System.out;
+
+        try (PrintStream capturedOut = new PrintStream(output)) {
+            System.setOut(capturedOut);
+
+            new CommandLineController(new String[]{"--help"});
+        } finally {
+            System.setOut(originalOut);
+        }
+
+        String expected = """
+            Usage: VideoPlayer [options] [video-file]
+
+            Options:
+              -h, --help         Show this help message
+              -a, --audio        Play audio
+              -x, --maximise     Open the player maximised
+              -1, --monitor-1    Open the player on display 1
+              -2, --monitor-2    Open the player on display 2
+
+            Frame processors:
+              -n, --number-frames    Render the frame number onto each frame
+              -s, --scratch-frames   Render vertical film scratches
+              -f, --flicker-frames   Randomly dim frames
+              -w, --black-and-white  Convert frames to black and white
+              -y, --yellow-frames    Apply a warmer colour temperature
+              -v, --vignette-frames  Darken the frame edges
+              -d, --dust-frames      Render dust and hair marks
+              -j, --jitter-frames    Randomly displace frames by a few pixels
+              -m, --mottle-frames    Add cloudy emulsion mottling
+              -b, --bleed-frames     Bleed light into frames
+              -p, --pepper-frames    Pepper frames with dark spots/blotches
+
+            Frame processors are applied in command-line order and may be repeated.
+            Example: -nssnfwyvdjmbp numbers, scratches twice, numbers again, flickers,
+            converts, warms, vignettes, dusts, jitters, mottles, bleeds, then peppers.
+            """;
+
+        assertThat(output.toString().replace("\r\n", "\n"))
+                .isEqualTo(expected);
+    }
+
+    @Test
+    void init_withUnknownOptionAndMissingFile_shouldPreserveFirstError() {
+        CommandLineController controller = new CommandLineController(
+                new String[]{
+                        "-q",
+                        tempDir.resolve("missing.mp4").toString()
+                }
+        );
+
+        assertThat(controller.getErrorMessage())
+                .isEqualTo("Unknown option: -q");
+        assertInvalid(controller);
     }
 
     private CommandLineController controllerWithVideo(String... options) {

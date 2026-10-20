@@ -86,7 +86,7 @@ public class CommandLineController {
                 parseOption(arg);
             } else if (arg.startsWith("-")) {
                 if (arg.length() == 1) {
-                    errorMessage = "Unknown option: " + arg;
+                    reportError("Unknown option: " + arg);
                 } else {
                     for (int i = 1; i < arg.length(); i++) {
                         parseOption("-" + arg.charAt(i));
@@ -98,24 +98,24 @@ public class CommandLineController {
         }
 
         if (videoFiles.size() > 1) {
-            errorMessage = "Usage: VideoPlayer [options] [video-file]";
+            reportError("Usage: VideoPlayer [options] [video-file]");
         } else if (videoFiles.size() == 1) {
             videoFile = new File(videoFiles.get(0));
 
             if (!videoFile.isFile()) {
-                errorMessage = "File not found: " + videoFile.getPath();
+                reportError("File not found: " + videoFile.getPath());
                 videoFile = null;
             }
         } else if (!helpRequested && errorMessage == null) {
-            errorMessage = "No video file specified.";
+            reportError("No video file specified.");
         }
     }
 
     private void parseOption(String option) {
-        List<FrameEffect> parsedEffects = FrameEffect.parseArgs(option);
+        FrameEffect effect = FrameEffect.fromOption(option);
 
-        if (!parsedEffects.isEmpty()) {
-            effects.addAll(parsedEffects);
+        if (effect != null) {
+            effects.add(effect);
             return;
         }
 
@@ -125,13 +125,13 @@ public class CommandLineController {
             case "-x", "--maximise" -> maximiseRequested = true;
             case "-1", "--monitor-1" -> setDisplayId(1);
             case "-2", "--monitor-2" -> setDisplayId(2);
-            default -> errorMessage = "Unknown option: " + option;
+            default -> reportError("Unknown option: " + option);
         }
     }
 
     private void setDisplayId(int displayId) {
         if (this.displayId != null && this.displayId != displayId) {
-            errorMessage = "Only one display option can be used";
+            reportError("Only one display option can be used");
             return;
         }
         this.displayId = displayId;
@@ -163,6 +163,11 @@ public class CommandLineController {
         System.out.println("Frame processors are applied in command-line order and may be repeated.");
         System.out.println("Example: -nssnfwyvdjmbp numbers, scratches twice, numbers again, flickers,");
         System.out.println("converts, warms, vignettes, dusts, jitters, mottles, bleeds, then peppers.");
+    }
 
+    private void reportError(String message) {
+        if (errorMessage == null) {
+            errorMessage = message;
+        }
     }
 }

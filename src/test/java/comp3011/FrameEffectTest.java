@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class FrameEffectTest {
 
     @Test
-    void parseArgs_withIndividualOptions_shouldReturnCorrectEffect() {
+    void fromOption_withIndividualOptions_shouldReturnCorrectEffect() {
         String[] shortOptions = {
                 "-n", "-s", "-f", "-w", "-y", "-v",
                 "-d", "-j", "-m", "-b", "-p"
@@ -39,56 +39,46 @@ public class FrameEffectTest {
         };
 
         for (int i = 0; i < expected.length; i++) {
-            assertThat(FrameEffect.parseArgs(shortOptions[i]))
+            assertThat(FrameEffect.fromOption(shortOptions[i]))
                     .as("Short option %s", shortOptions[i])
-                    .containsExactly(expected[i]);
+                    .isEqualTo(expected[i]);
 
-            assertThat(FrameEffect.parseArgs(longOptions[i]))
+            assertThat(FrameEffect.fromOption(longOptions[i]))
                     .as("Long option %s", longOptions[i])
-                    .containsExactly(expected[i]);
+                    .isEqualTo(expected[i]);
         }
     }
 
     @Test
-    void parseArgs_withStackedOptions_shouldPreserveOrderAndDuplicates() {
-        assertThat(FrameEffect.parseArgs("-jfddn"))
-                .containsExactly(JITTER, FLICKER, DUST, DUST, NUMBER);
-    }
-
-    @Test
-    void parseArgs_withAssignmentExample_shouldPreserveEntireSequence() {
-        assertThat(FrameEffect.parseArgs("-nssnfwyvdjmbp"))
-                .containsExactly(
-                        NUMBER, SCRATCH, SCRATCH, NUMBER,
-                        FLICKER, BLACK_AND_WHITE, YELLOW,
-                        VIGNETTE, DUST, JITTER, MOTTLE,
-                        BLEED, PEPPER
-                );
-    }
-
-    @Test
-    void parseArgs_withUnknownLetter_shouldRejectEntireStack() {
+    void fromOption_withStackedOptions_shouldReturnNull() {
         String[] options = {
-                "-q", "-jq", "-qj", "-jfqd", "-jfddnq"
+                "-jf",
+                "-dd",
+                "-jfddn",
+                "-nssnfwyvdjmbp",
+                "-ajf",
+                "-jq"
         };
 
         for (String option : options) {
-            assertThat(FrameEffect.parseArgs(option))
-                    .as("Invalid stack %s", option)
-                    .isEmpty();
+            assertThat(FrameEffect.fromOption(option))
+                    .as("Stacked option %s must be split by the controller", option)
+                    .isNull();
         }
     }
 
     @Test
-    void parseArgs_withNonEffectInput_shouldReturnEmptyList() {
+    void fromOption_withNonEffectInput_shouldReturnNull() {
         String[] inputs = {
                 null,
                 "",
                 "-",
                 "--",
                 "video.mp4",
-                "jfddn",
+                "n",
+                "number-frames",
                 "--unknown",
+                "-q",
                 "--number",
                 "--number-frames-extra",
                 "--NUMBER-FRAMES",
@@ -106,18 +96,50 @@ public class FrameEffectTest {
         };
 
         for (String input : inputs) {
-            assertThat(FrameEffect.parseArgs(input))
+            assertThat(FrameEffect.fromOption(input))
                     .as("Non-effect input %s", input)
-                    .isEmpty();
+                    .isNull();
         }
     }
 
     @Test
-    void parseArgs_withSeparateCalls_shouldKeepResultsIndependent() {
-        var first = FrameEffect.parseArgs("-jf");
-        var second = FrameEffect.parseArgs("-dd");
+    void createProcessor_shouldCreateCorrectProcessorType() {
+        FrameEffect[] effects = {
+                NUMBER, SCRATCH, FLICKER, BLACK_AND_WHITE,
+                YELLOW, VIGNETTE, DUST, JITTER,
+                MOTTLE, BLEED, PEPPER
+        };
 
-        assertThat(first).containsExactly(JITTER, FLICKER);
-        assertThat(second).containsExactly(DUST, DUST);
+        Class<?>[] expectedTypes = {
+                FrameNumberer.class,
+                FrameScratcher.class,
+                FrameFlickerer.class,
+                FrameBlackAndWhiter.class,
+                FrameYellower.class,
+                FrameVignetter.class,
+                FrameDuster.class,
+                FrameJitterer.class,
+                FrameMottler.class,
+                FrameBleeder.class,
+                FramePepperer.class
+        };
+
+        for (int i = 0; i < effects.length; i++) {
+            assertThat(effects[i].createProcessor())
+                    .as("Processor created for %s", effects[i])
+                    .isExactlyInstanceOf(expectedTypes[i]);
+        }
+    }
+
+    @Test
+    void createProcessor_whenCalledRepeatedly_shouldCreateDistinctInstances() {
+        for (FrameEffect effect : FrameEffect.values()) {
+            FrameProcessor first = effect.createProcessor();
+            FrameProcessor second = effect.createProcessor();
+
+            assertThat(first)
+                    .as("Repeated %s selections need separate instances", effect)
+                    .isNotSameAs(second);
+        }
     }
 }

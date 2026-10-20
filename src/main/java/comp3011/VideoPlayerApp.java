@@ -45,7 +45,7 @@ public class VideoPlayerApp extends Application {
 
         controller = new VideoPlayerController(
                 commandLineController.isAudioRequested(),
-                getFrameProcessors(commandLineController.getFrameEffects()),
+                commandLineController.getFrameEffects(),
                 this::setVideoSize
         );
 
@@ -63,39 +63,6 @@ public class VideoPlayerApp extends Application {
         stage.setOnCloseRequest(_ -> controller.shutdown());
 
         playVideo();
-    }
-
-    private List<FrameProcessor> getFrameProcessors(List<FrameEffect> frameEffects) {
-        return frameEffects.stream()
-                .map(effect -> {
-                    switch (effect) {
-                        case NUMBER:
-                            return new FrameNumberer();
-                        case SCRATCH:
-                            return new FrameScratcher();
-                        case FLICKER:
-                            return new FrameFlickerer();
-                        case BLACK_AND_WHITE:
-                            return new FrameBlackAndWhiter();
-                        case YELLOW:
-                            return new FrameYellower();
-                        case VIGNETTE:
-                            return new FrameVignetter();
-                        case DUST:
-                            return new FrameDuster();
-                        case JITTER:
-                            return new FrameJitterer();
-                        case MOTTLE:
-                            return new FrameMottler();
-                        case BLEED:
-                            return new FrameBleeder();
-                        case PEPPER:
-                            return new FramePepperer();
-                        default:
-                            throw new IllegalArgumentException("Unsupported frame effect: " + effect);
-                    }
-                })
-                .toList();
     }
 
     private void moveToSelectedScreen(Stage stage) {
