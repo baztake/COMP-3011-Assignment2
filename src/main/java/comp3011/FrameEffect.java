@@ -60,19 +60,19 @@ public enum FrameEffect {
      * Creates a new processor for this occurrence of the effect.
      * Repeated selections must receive separate processor instances.
      */
-    public FrameProcessor createProcessor() {
+    public FrameProcessor createProcessor(int occurrenceIndex) {
         return switch (this) {
             case NUMBER -> new FrameNumberer();
-            case SCRATCH -> new FrameScratcher();
-            case FLICKER -> new FrameFlickerer();
+            case SCRATCH -> new FrameScratcher(occurrenceIndex);
+            case FLICKER -> new FrameFlickerer(occurrenceIndex);
             case BLACK_AND_WHITE -> new FrameBlackAndWhiter();
             case YELLOW -> new FrameYellower();
             case VIGNETTE -> new FrameVignetter();
-            case DUST -> new FrameDuster();
-            case JITTER -> new FrameJitterer();
-            case MOTTLE -> new FrameMottler();
+            case DUST -> new FrameDuster(occurrenceIndex);
+            case JITTER -> new FrameJitterer(occurrenceIndex);
+            case MOTTLE -> new FrameMottler(occurrenceIndex);
             case BLEED -> new FrameBleeder();
-            case PEPPER -> new FramePepperer();
+            case PEPPER -> new FramePepperer(occurrenceIndex);
         };
     }
 }

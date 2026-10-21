@@ -19,9 +19,7 @@ import org.bytedeco.javacv.FrameGrabber;
 import org.bytedeco.javacv.JavaFXFrameConverter;
 
 import java.io.File;
-import java.util.ArrayDeque;
-import java.util.List;
-import java.util.Queue;
+import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -97,14 +95,33 @@ public class VideoPlayerModel {
         Consumer<Boolean> audioOutputStateChangedHandler
     ) {
         audioOutputEnabled = audioEnabled;
-        this.frameProcessors = frameEffects.stream()
-            .map(FrameEffect::createProcessor)
-            .toList();
+        this.frameProcessors = buildFrameProcessors(frameEffects);
         this.videoSizeChangedHandler = videoSizeChangedHandler;
         this.frameReadyHandler = frameReadyHandler;
         this.statusChangedHandler = statusChangedHandler;
         this.playbackStateChangedHandler = playbackStateChangedHandler;
         this.audioOutputStateChangedHandler = audioOutputStateChangedHandler;
+    }
+
+    /**
+     * Builds a processor chain in CLI order, assigning occurrence indexes separately for each effect type.
+     * Local counters ensure equivalent chains receive the same indexes, without sharing static counters between processor instances.
+     *
+     * @param frameEffects the selected frame effects in CLI order
+     * @return an unmodifiable list of newly created processors
+     */
+    private List<FrameProcessor> buildFrameProcessors(List<FrameEffect> frameEffects) {
+        Map<FrameEffect, Integer> occurrenceCounts = new EnumMap<>(FrameEffect.class);
+        List<FrameProcessor> processors = new ArrayList<>();
+
+        for (FrameEffect effect : frameEffects) {
+            int occurrenceIndex = occurrenceCounts.getOrDefault(effect, 0);
+
+            processors.add(effect.createProcessor(occurrenceIndex));
+            occurrenceCounts.put(effect, occurrenceIndex + 1);
+        }
+
+        return List.copyOf(processors);
     }
 
     public void play(File file) {

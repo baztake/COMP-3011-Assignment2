@@ -28,14 +28,17 @@ import java.util.Random;
 public class FrameFlickerer extends FrameProcessor {
     private static final double FLICKER_PERCENTAGE_SD = 5.0;
 
-    private static int nextInstanceIndex;
-
     private final int instanceIndex;
     private int mediaSeed;
 
-    public FrameFlickerer() {
+    /**
+     * Constructor.
+     * We pass in the instanceIndex rather than using a static nextInstanceIndex counter to ensure it's threadsafe.
+     * @param instanceIndex the instance index.
+     */
+    public FrameFlickerer(int instanceIndex) {
         super();
-        instanceIndex = nextInstanceIndex++;
+        this.instanceIndex = instanceIndex;
     }
 
     @Override

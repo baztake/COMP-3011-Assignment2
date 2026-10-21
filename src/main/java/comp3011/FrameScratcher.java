@@ -33,15 +33,18 @@ public class FrameScratcher extends FrameProcessor {
     private static final double THICK_SCRATCH_PROBABILITY = 0.15;
     private static final int SCRATCH_MAX_TRAVEL = 32;
 
-    private static int nextInstanceIndex;
-
     private final int instanceIndex;
     private final List<Scratch> scratches = new ArrayList<>();
     private int mediaSeed;
 
-    public FrameScratcher() {
+    /**
+     * Constructor.
+     * We pass in the instanceIndex rather than using a static nextInstanceIndex counter to ensure it's threadsafe.
+     * @param instanceIndex the instance index.
+     */
+    public FrameScratcher(int instanceIndex) {
         super();
-        instanceIndex = nextInstanceIndex++;
+        this.instanceIndex = instanceIndex;
     }
 
     @Override

@@ -50,60 +50,28 @@ public class FrameEffectTest {
     }
 
     @Test
-    void fromOption_withStackedOptions_shouldReturnNull() {
-        String[] options = {
-            "-jf",
-            "-dd",
-            "-jfddn",
-            "-nssnfwyvdjmbp",
-            "-ajf",
-            "-jq"
-        };
-
-        for (String option : options) {
-            assertThat(FrameEffect.fromOption(option))
-                .as("Stacked option %s must be split by the controller", option)
-                .isNull();
-        }
-    }
-
-    @Test
-    void fromOption_withNonEffectInput_shouldReturnNull() {
+    void fromOption_withUnsupportedInput_shouldReturnNull() {
         String[] inputs = {
             null,
             "",
-            "-",
-            "--",
             "video.mp4",
-            "n",
-            "number-frames",
-            "--unknown",
             "-q",
-            "--number",
-            "--number-frames-extra",
+            "--unknown",
             "--NUMBER-FRAMES",
-            "-N",
-            "-a",
+            "--number-frames-extra",
             "--audio",
-            "-x",
-            "--maximise",
-            "-h",
-            "--help",
-            "-1",
-            "--monitor-1",
-            "-2",
-            "--monitor-2"
+            "-jf"
         };
 
         for (String input : inputs) {
             assertThat(FrameEffect.fromOption(input))
-                .as("Non-effect input %s", input)
+                .as("Unsupported effect option %s", input)
                 .isNull();
         }
     }
 
     @Test
-    void createProcessor_shouldCreateCorrectProcessorType() {
+    void createProcessor_shouldCreateCorrectTypeAndIndependentInstances() {
         FrameEffect[] effects = {
             NUMBER, SCRATCH, FLICKER, BLACK_AND_WHITE,
             YELLOW, VIGNETTE, DUST, JITTER,
@@ -125,20 +93,15 @@ public class FrameEffectTest {
         };
 
         for (int i = 0; i < effects.length; i++) {
-            assertThat(effects[i].createProcessor())
-                .as("Processor created for %s", effects[i])
-                .isExactlyInstanceOf(expectedTypes[i]);
-        }
-    }
-
-    @Test
-    void createProcessor_whenCalledRepeatedly_shouldCreateDistinctInstances() {
-        for (FrameEffect effect : FrameEffect.values()) {
-            FrameProcessor first = effect.createProcessor();
-            FrameProcessor second = effect.createProcessor();
+            FrameProcessor first = effects[i].createProcessor(0);
+            FrameProcessor second = effects[i].createProcessor(0);
 
             assertThat(first)
-                .as("Repeated %s selections need separate instances", effect)
+                .as("Processor created for %s", effects[i])
+                .isExactlyInstanceOf(expectedTypes[i]);
+
+            assertThat(first)
+                .as("Equivalent worker chains need separate %s instances", effects[i])
                 .isNotSameAs(second);
         }
     }

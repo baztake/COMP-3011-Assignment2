@@ -186,6 +186,14 @@ Performance tests will use the same video, effects and machine for both versions
 time, playback smoothness, GUI responsiveness and memory use, with audio both enabled and disabled.
 
 Worker counts and buffer sizes will be adjusted using these results. More workers may improve effect processing, but
-decoding, display timing and coordination still limit the overall improvement. 
+decoding, display timing and coordination still limit the overall improvement.
 
 The final checks will include `mvn verify` and manual playback testing.
+
+## Implementation Log
+
+- First steps, starting with the effects. A few of them use static index counters, so I update them to pass in the
+  instanceIndex variable during construction to prevent a race condition if two threads try to instantiate the object at
+  once. This is documented in the Javadocs of every constructor that needs it.
+- Following on from this, I updated the FrameEffect enum to use the new variable in construction, then update that usage
+  in the VideoPlayerModel. Updated tests accordingly
