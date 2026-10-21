@@ -1,27 +1,27 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. <student name and student number insert here upon modification>
+ *   2. Bailey Staykov, a1886621, in collaboration with GPT-6.1 Sol
  *
  * Copyright 2026 Simon Ratcliffe
  */
 package comp3011;
-
-import java.io.File;
-import java.util.List;
-import java.util.function.BiConsumer;
 
 import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
+import java.io.File;
+import java.util.List;
+import java.util.function.BiConsumer;
+
 /**
  * The controller part of the video player model-view-controller architecture.
- * 
+ *
  * <p>
  * Wires up events from the {@link VideoPlayerView} to the {@link VideoPlayerModel}.
  * This includes button actions, keyboard shortcuts and display resizing.
@@ -33,20 +33,20 @@ public class VideoPlayerController {
     private final BiConsumer<Integer, Integer> videoSizeChangedHandler;
 
     public VideoPlayerController(
-            boolean audioEnabled,
-            List<FrameEffect> frameEffects,
-            BiConsumer<Integer, Integer> videoSizeChangedHandler
+        boolean audioEnabled,
+        List<FrameEffect> frameEffects,
+        BiConsumer<Integer, Integer> videoSizeChangedHandler
     ) {
         this.view = new VideoPlayerView();
         this.videoSizeChangedHandler = videoSizeChangedHandler;
         model = new VideoPlayerModel(
-                audioEnabled,
-                frameEffects,
-                this::onVideoSizeChanged,
-                this::onFrameReady,
-                this::onStatusChanged,
-                this::onPlaybackStateChanged,
-                this::onAudioOutputStateChanged
+            audioEnabled,
+            frameEffects,
+            this::onVideoSizeChanged,
+            this::onFrameReady,
+            this::onStatusChanged,
+            this::onPlaybackStateChanged,
+            this::onAudioOutputStateChanged
         );
 
         view.getStartOverButton().setOnAction(_ -> startOver());

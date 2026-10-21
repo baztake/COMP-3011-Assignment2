@@ -1,7 +1,7 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
  *   2. <student name and student number insert here upon modification>
@@ -10,10 +10,10 @@
  */
 package comp3011;
 
+import org.bytedeco.javacv.Frame;
+
 import java.nio.ByteBuffer;
 import java.util.Random;
-
-import org.bytedeco.javacv.Frame;
 
 /**
  * Adds uneven brightness and colour staining to simulate aged film emulsion.
@@ -189,8 +189,8 @@ public class FrameMottler extends FrameProcessor {
 
         for (int i = 0; i < field.length; i++) {
             field[i] = fineField[i] * FINE_MOTTLE_WEIGHT
-                    + mediumField[i] * MEDIUM_MOTTLE_WEIGHT
-                    + largeField[i] * LARGE_MOTTLE_WEIGHT;
+                + mediumField[i] * MEDIUM_MOTTLE_WEIGHT
+                + largeField[i] * LARGE_MOTTLE_WEIGHT;
         }
 
         normaliseField(field);
@@ -270,10 +270,10 @@ public class FrameMottler extends FrameProcessor {
     }
 
     private void mottleFrame(
-            ByteBuffer pixels,
-            double[] brightnessField,
-            double[] stainField,
-            double damageMaskBlend) {
+        ByteBuffer pixels,
+        double[] brightnessField,
+        double[] stainField,
+        double damageMaskBlend) {
         int height = videoInfo.imageHeight();
         int width = videoInfo.imageWidth();
         int channels = videoInfo.imageChannels();
@@ -288,32 +288,32 @@ public class FrameMottler extends FrameProcessor {
                 int sampleX = (blockX + blockXEnd - 1) / 2;
 
                 if (!prepareScaleIndicesForBlock(
-                        sampleX,
-                        sampleY,
-                        brightnessField,
-                        stainField,
-                        damageMaskBlend)) {
+                    sampleX,
+                    sampleY,
+                    brightnessField,
+                    stainField,
+                    damageMaskBlend)) {
                     continue;
                 }
 
                 applyMottleBlock(
-                        pixels,
-                        blockX,
-                        blockXEnd,
-                        blockY,
-                        blockYEnd,
-                        channels,
-                        stride);
+                    pixels,
+                    blockX,
+                    blockXEnd,
+                    blockY,
+                    blockYEnd,
+                    channels,
+                    stride);
             }
         }
     }
 
     private boolean prepareScaleIndicesForBlock(
-            int x,
-            int y,
-            double[] brightnessField,
-            double[] stainField,
-            double damageMaskBlend) {
+        int x,
+        int y,
+        double[] brightnessField,
+        double[] stainField,
+        double damageMaskBlend) {
         double damageStrength = sampleDamageMask(x, y, damageMaskBlend);
         if (damageStrength <= 0.0) {
             return false;
@@ -369,13 +369,13 @@ public class FrameMottler extends FrameProcessor {
     }
 
     private void applyMottleBlock(
-            ByteBuffer pixels,
-            int blockX,
-            int blockXEnd,
-            int blockY,
-            int blockYEnd,
-            int channels,
-            int stride) {
+        ByteBuffer pixels,
+        int blockX,
+        int blockXEnd,
+        int blockY,
+        int blockYEnd,
+        int channels,
+        int stride) {
         byte[] blueLookup = scaleLookups[blockBlueScaleIndex];
         byte[] greenLookup = scaleLookups[blockGreenScaleIndex];
         byte[] redLookup = scaleLookups[blockRedScaleIndex];

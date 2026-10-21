@@ -1,5 +1,5 @@
 /**
- * Assignment 2 additions by Bailey Staykov (a1886621)
+ * Assignment 2 additions by Bailey Staykov, a1886621, in collaboration with GPT-6.1 Sol
  */
 package comp3011;
 
@@ -49,7 +49,7 @@ public enum FrameEffect {
     public static FrameEffect fromOption(String option) {
         for (FrameEffect effect : values()) {
             if (("-" + effect.shortOption).equals(option)
-                    || ("--" + effect.longOption).equals(option)) {
+                || ("--" + effect.longOption).equals(option)) {
                 return effect;
             }
         }

@@ -1,7 +1,7 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
  *   2. <student name and student number insert here upon modification>
@@ -78,14 +78,14 @@ public class VideoPlayerView {
         setPlaybackControlsDisabled(true);
 
         HBox controls = new HBox(
-                10,
-                startOverButton,
-                backFiveButton,
-                pausePlayButton,
-                forwardFiveButton,
-                stopButton,
-                audioButton,
-                statusLabel);
+            10,
+            startOverButton,
+            backFiveButton,
+            pausePlayButton,
+            forwardFiveButton,
+            stopButton,
+            audioButton,
+            statusLabel);
 
         controls.setPadding(new Insets(10));
 
@@ -191,12 +191,12 @@ public class VideoPlayerView {
         tooltipLabel.setVisible(false);
         tooltipLabel.setMouseTransparent(true);
         tooltipLabel.setStyle(
-                "-fx-background-color: #ffffdc;"
-                        + "-fx-border-color: #8a8a8a;"
-                        + "-fx-border-width: 1;"
-                        + "-fx-padding: 4 7 4 7;"
-                        + "-fx-font-size: 12px;"
-                        + "-fx-text-fill: black;");
+            "-fx-background-color: #ffffdc;"
+                + "-fx-border-color: #8a8a8a;"
+                + "-fx-border-width: 1;"
+                + "-fx-padding: 4 7 4 7;"
+                + "-fx-font-size: 12px;"
+                + "-fx-text-fill: black;");
     }
 
     private void showTooltip(String text, double sceneX, double sceneY) {
@@ -214,8 +214,8 @@ public class VideoPlayerView {
         double maxX = Math.max(0, tooltipLayer.getWidth() - tooltipLabel.getWidth() - 2);
         double maxY = Math.max(0, tooltipLayer.getHeight() - tooltipLabel.getHeight() - 2);
         tooltipLabel.relocate(
-                Math.max(0, Math.min(point.getX(), maxX)),
-                Math.max(0, Math.min(point.getY(), maxY)));
+            Math.max(0, Math.min(point.getX(), maxX)),
+            Math.max(0, Math.min(point.getY(), maxY)));
     }
 
     private void hideTooltip() {
@@ -243,22 +243,22 @@ public class VideoPlayerView {
 
         SVGPath loop = new SVGPath();
         loop.setContent(clockwise
-                ? "M 10 6 "
-                        + "C 7 7.5 5 10.5 5 14 "
-                        + "C 5 19 9 23 14 23 "
-                        + "C 19 23 23 19 23 14 " // ~3/4 circle bezier curve empty top right
-                : "M 5 14 "
-                        + "C 5 19 9 23 14 23 "
-                        + "C 19 23 23 19 23 14 "
-                        + "C 23 10.5 21 7.5 18 6"); // ~3/4 circle bezier curve empty top right
+            ? "M 10 6 "
+            + "C 7 7.5 5 10.5 5 14 "
+            + "C 5 19 9 23 14 23 "
+            + "C 19 23 23 19 23 14 " // ~3/4 circle bezier curve empty top right
+            : "M 5 14 "
+            + "C 5 19 9 23 14 23 "
+            + "C 19 23 23 19 23 14 "
+            + "C 23 10.5 21 7.5 18 6"); // ~3/4 circle bezier curve empty top right
         loop.setFill(null);
         loop.setStroke(Color.BLACK);
         loop.setStrokeWidth(2.25);
         loop.setStrokeLineCap(StrokeLineCap.ROUND);
 
         Polygon arrowHead = clockwise
-                ? new Polygon(18, 5, 11.5, 1.5, 11.5, 8.5)
-                : new Polygon(10, 5, 16.5, 1.5, 16.5, 8.5);
+            ? new Polygon(18, 5, 11.5, 1.5, 11.5, 8.5)
+            : new Polygon(10, 5, 16.5, 1.5, 16.5, 8.5);
         arrowHead.setFill(Color.BLACK);
 
         pane.getChildren().addAll(loop, arrowHead);
@@ -293,9 +293,9 @@ public class VideoPlayerView {
         GraphicsContext gc = canvas.getGraphicsContext2D();
         gc.setFill(Color.BLACK);
         gc.fillPolygon(
-                new double[] { 10, 10, 21 },
-                new double[] { 7, 21, 14 },
-                3);
+            new double[]{10, 10, 21},
+            new double[]{7, 21, 14},
+            3);
         return canvas;
     }
 
@@ -316,12 +316,12 @@ public class VideoPlayerView {
         pane.setMaxSize(ICON_SIZE, ICON_SIZE);
 
         Polygon speaker = new Polygon(
-                5, 11,
-                10, 11,
-                16, 6,
-                16, 22,
-                10, 17,
-                5, 17);
+            5, 11,
+            10, 11,
+            16, 6,
+            16, 22,
+            10, 17,
+            5, 17);
         speaker.setFill(Color.BLACK);
         pane.getChildren().add(speaker);
 

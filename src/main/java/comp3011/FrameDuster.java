@@ -1,7 +1,7 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
  *   2. <student name and student number insert here upon modification>
@@ -10,10 +10,10 @@
  */
 package comp3011;
 
+import org.bytedeco.javacv.Frame;
+
 import java.nio.ByteBuffer;
 import java.util.Random;
-
-import org.bytedeco.javacv.Frame;
 
 /**
  * Adds dark dust and hair-like marks to simulate damaged film.
@@ -127,11 +127,11 @@ public class FrameDuster extends FrameProcessor {
         for (int sample = 0; sample <= sampleCount; sample++) {
             double t = (double) sample / sampleCount;
             drawSoftDarkPoint(
-                    pixels,
-                    cubicBezier(x0, x1, x2, x3, t),
-                    cubicBezier(y0, y1, y2, y3, t),
-                    radius,
-                    opacity);
+                pixels,
+                cubicBezier(x0, x1, x2, x3, t),
+                cubicBezier(y0, y1, y2, y3, t),
+                radius,
+                opacity);
         }
     }
 
@@ -160,9 +160,9 @@ public class FrameDuster extends FrameProcessor {
     private double cubicBezier(double p0, double p1, double p2, double p3, double t) {
         double u = 1.0 - t;
         return u * u * u * p0
-                + 3.0 * u * u * t * p1
-                + 3.0 * u * t * t * p2
-                + t * t * t * p3;
+            + 3.0 * u * u * t * p1
+            + 3.0 * u * t * t * p2
+            + t * t * t * p3;
     }
 
     private void drawSoftDarkPoint(ByteBuffer pixels, double centreX, double centreY, double radius, double opacity) {

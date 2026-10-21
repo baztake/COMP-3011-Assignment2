@@ -1,22 +1,22 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. Bailey Staykov, a1886621
+ *   2. Bailey Staykov, a1886621, in collaboration with GPT-6.1 Sol
  *
  * Copyright 2026 Simon Ratcliffe
  */
 package comp3011;
-
-import java.util.List;
 
 import javafx.application.Application;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
+
+import java.util.List;
 
 /**
  * Extents JavaFX's Application class and is the entry point for the video player.
@@ -39,14 +39,25 @@ public class VideoPlayerApp extends Application {
     private int videoWidth;
     private int videoHeight;
 
+    // Entry point.
+    public static void main(String[] args) {
+        commandLineController = new CommandLineController(args);
+
+        if (!commandLineController.shouldLaunchApplication()) {
+            System.exit(commandLineController.getExitCode());
+        }
+
+        launch(args);
+    }
+
     @Override
     public void start(Stage stage) {
         this.stage = stage;
 
         controller = new VideoPlayerController(
-                commandLineController.isAudioRequested(),
-                commandLineController.getFrameEffects(),
-                this::setVideoSize
+            commandLineController.isAudioRequested(),
+            commandLineController.getFrameEffects(),
+            this::setVideoSize
         );
 
         Scene scene = new Scene(controller.getView().getRoot());
@@ -72,9 +83,9 @@ public class VideoPlayerApp extends Application {
 
         if (displayId == null) {
             targetScreen = screens.stream()
-                    .filter(screen -> !screen.equals(Screen.getPrimary()))
-                    .findFirst()
-                    .orElse(Screen.getPrimary());
+                .filter(screen -> !screen.equals(Screen.getPrimary()))
+                .findFirst()
+                .orElse(Screen.getPrimary());
         } else if (displayId <= screens.size()) {
             targetScreen = screens.get(displayId - 1);
         } else {
@@ -137,16 +148,5 @@ public class VideoPlayerApp extends Application {
         if (controller != null) {
             controller.shutdown();
         }
-    }
-
-    // Entry point.
-    public static void main(String[] args) {
-        commandLineController = new CommandLineController(args);
-
-        if (!commandLineController.shouldLaunchApplication()) {
-            System.exit(commandLineController.getExitCode());
-        }
-
-        launch(args);
     }
 }

@@ -1,31 +1,29 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. <student name and student number insert here upon modification>
+ *   2. Bailey Staykov, a1886621, in collaboration with GPT-6.1 Sol
  *
  * Copyright 2026 Simon Ratcliffe
  */
 package comp3011;
 
-import java.io.File;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Queue;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
-
+import javafx.animation.AnimationTimer;
+import javafx.application.Platform;
+import javafx.scene.image.Image;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.FrameGrabber;
 import org.bytedeco.javacv.JavaFXFrameConverter;
 
-import javafx.animation.AnimationTimer;
-import javafx.application.Platform;
-import javafx.scene.image.Image;
+import java.io.File;
+import java.util.ArrayDeque;
+import java.util.List;
+import java.util.Queue;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * The model part of the video player model-view-controller architecture.
@@ -90,18 +88,18 @@ public class VideoPlayerModel {
     private long relativeSeekBaseUs = NO_SEEK_REQUEST;
 
     public VideoPlayerModel(
-            boolean audioEnabled,
-            List<FrameEffect> frameEffects,
-            BiConsumer<Integer, Integer> videoSizeChangedHandler,
-            Consumer<Image> frameReadyHandler,
-            Consumer<String> statusChangedHandler,
-            BiConsumer<Boolean, Boolean> playbackStateChangedHandler,
-            Consumer<Boolean> audioOutputStateChangedHandler
+        boolean audioEnabled,
+        List<FrameEffect> frameEffects,
+        BiConsumer<Integer, Integer> videoSizeChangedHandler,
+        Consumer<Image> frameReadyHandler,
+        Consumer<String> statusChangedHandler,
+        BiConsumer<Boolean, Boolean> playbackStateChangedHandler,
+        Consumer<Boolean> audioOutputStateChangedHandler
     ) {
         audioOutputEnabled = audioEnabled;
         this.frameProcessors = frameEffects.stream()
-                .map(FrameEffect::createProcessor)
-                .toList();
+            .map(FrameEffect::createProcessor)
+            .toList();
         this.videoSizeChangedHandler = videoSizeChangedHandler;
         this.frameReadyHandler = frameReadyHandler;
         this.statusChangedHandler = statusChangedHandler;
@@ -183,8 +181,8 @@ public class VideoPlayerModel {
         }
 
         long baseTimestampUs = relativeSeekBaseUs != NO_SEEK_REQUEST
-                ? relativeSeekBaseUs
-                : currentTimestampUs;
+            ? relativeSeekBaseUs
+            : currentTimestampUs;
         seekTo(baseTimestampUs + offsetUs);
     }
 
@@ -213,8 +211,8 @@ public class VideoPlayerModel {
 
         pauseRequested = initiallyPaused;
         currentTimestampUs = initialRelativeSeekBaseUs != NO_SEEK_REQUEST
-                ? initialRelativeSeekBaseUs
-                : startTimestampUs;
+            ? initialRelativeSeekBaseUs
+            : startTimestampUs;
         relativeSeekBaseUs = initialRelativeSeekBaseUs;
 
         notifyStatusChanged(videoFile.getName());
@@ -243,14 +241,14 @@ public class VideoPlayerModel {
         frameRate = grabber.getFrameRate();
         intFrameRate = (int) Math.round(frameRate);
         videoFrameDurationUs = frameRate > 0
-                ? (int) Math.round(1_000_000.0 / frameRate)
-                : 0;
+            ? (int) Math.round(1_000_000.0 / frameRate)
+            : 0;
         totalVideoFrames = grabber.getLengthInVideoFrames();
 
         long durationUs = grabber.getLengthInTime();
         videoDurationUs = durationUs > 0
-                ? durationUs
-                : NO_SEEK_REQUEST;
+            ? durationUs
+            : NO_SEEK_REQUEST;
 
         audioAvailable = grabber.hasAudio();
         audioPlayer = new AudioPlayer();
@@ -312,17 +310,17 @@ public class VideoPlayerModel {
 
             if (!frameProcessorsInitialised) {
                 initialiseFrameProcessors(new InfoVideo(
-                        mediaName(videoFile),
-                        totalVideoFrames,
-                        frame.imageWidth,
-                        frame.imageHeight,
-                        frame.imageDepth,
-                        frame.imageChannels,
-                        frame.imageStride,
-                        frameRate,
-                        intFrameRate,
-                        videoFrameDurationUs,
-                        grabber.getPixelFormat()));
+                    mediaName(videoFile),
+                    totalVideoFrames,
+                    frame.imageWidth,
+                    frame.imageHeight,
+                    frame.imageDepth,
+                    frame.imageChannels,
+                    frame.imageStride,
+                    frameRate,
+                    intFrameRate,
+                    videoFrameDurationUs,
+                    grabber.getPixelFormat()));
                 frameProcessorsInitialised = true;
             }
 
@@ -344,12 +342,12 @@ public class VideoPlayerModel {
             long targetTimeNs = playbackStartNs + relativeTimestampUs * 1_000L;
 
             return new PreparedFrame(
-                    image,
-                    frameNumber,
-                    timestampUs,
-                    logicalTimestampUs,
-                    targetTimeNs,
-                    System.nanoTime());
+                image,
+                frameNumber,
+                timestampUs,
+                logicalTimestampUs,
+                targetTimeNs,
+                System.nanoTime());
         }
 
         return null;
@@ -403,12 +401,12 @@ public class VideoPlayerModel {
             long remainingUs = (frame.targetTimeNs() - frame.preparedAtNs()) / 1_000L;
             if (remainingUs < 0) {
                 System.out.printf("Frame headroom is \u001B[31m%5dus\u001B[0m out of %dus spare.%n",
-                        remainingUs,
-                        videoFrameDurationUs);
+                    remainingUs,
+                    videoFrameDurationUs);
             } else {
                 System.out.printf("Frame headroom is \u001B[32m%5dus\u001B[0m out of %dus spare.%n",
-                        remainingUs,
-                        videoFrameDurationUs);
+                    remainingUs,
+                    videoFrameDurationUs);
             }
         }
 
@@ -459,8 +457,8 @@ public class VideoPlayerModel {
 
     private void finishPlayback() {
         long endTimestampUs = videoDurationUs != NO_SEEK_REQUEST
-                ? videoDurationUs
-                : currentTimestampUs;
+            ? videoDurationUs
+            : currentTimestampUs;
 
         closePlaybackResources();
         pauseRequested = true;
@@ -592,12 +590,12 @@ public class VideoPlayerModel {
     }
 
     private record PreparedFrame(
-            Image image,
-            int frameNumber,
-            long mediaTimestampUs,
-            long logicalTimestampUs,
-            long targetTimeNs,
-            long preparedAtNs) {
+        Image image,
+        int frameNumber,
+        long mediaTimestampUs,
+        long logicalTimestampUs,
+        long targetTimeNs,
+        long preparedAtNs) {
     }
 
     private static class PendingAudio {

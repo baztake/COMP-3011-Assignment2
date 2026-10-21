@@ -1,6 +1,6 @@
 /*
  * Unit tests for the CommandLineController class.
- * Created by Bailey Staykov, a1886621, with assistance from GPT-6.1 Sol.
+ * Created by Bailey Staykov, a1886621, in collaboration with GPT-6.1 Sol
  */
 package comp3011;
 
@@ -30,7 +30,7 @@ public class CommandLineControllerTest {
     @BeforeEach
     void setUp() throws IOException {
         videoFile = Files.createFile(
-                tempDir.resolve("video with spaces.mp4")
+            tempDir.resolve("video with spaces.mp4")
         ).toFile();
     }
 
@@ -49,11 +49,11 @@ public class CommandLineControllerTest {
     @Test
     void init_withBasicOptions_shouldAcceptShortLongAndMixedForms() {
         String[][] combinations = {
-                {"--audio", "--maximise"},
-                {"-a", "-x"},
-                {"--audio", "-x"},
-                {"-a", "--maximise"},
-                {"--maximise", "--audio"}
+            {"--audio", "--maximise"},
+            {"-a", "-x"},
+            {"--audio", "-x"},
+            {"-a", "--maximise"},
+            {"--maximise", "--audio"}
         };
 
         for (String[] options : combinations) {
@@ -69,8 +69,8 @@ public class CommandLineControllerTest {
     @Test
     void init_withMonitorOptions_shouldAcceptBothAliases() {
         String[][] aliases = {
-                {"-1", "--monitor-1"},
-                {"-2", "--monitor-2"}
+            {"-1", "--monitor-1"},
+            {"-2", "--monitor-2"}
         };
 
         for (int i = 0; i < aliases.length; i++) {
@@ -86,7 +86,7 @@ public class CommandLineControllerTest {
     @Test
     void init_withRepeatedMonitorOption_shouldRemainValid() {
         CommandLineController controller =
-                controllerWithVideo("-1", "--monitor-1", "-1");
+            controllerWithVideo("-1", "--monitor-1", "-1");
 
         assertThat(controller.getDisplayId()).isEqualTo(1);
         assertValid(controller);
@@ -95,16 +95,16 @@ public class CommandLineControllerTest {
     @Test
     void init_withConflictingMonitors_shouldReportError() {
         String[][] combinations = {
-                {"-1", "-2"},
-                {"--monitor-1", "--monitor-2"},
-                {"-2", "--monitor-1"}
+            {"-1", "-2"},
+            {"--monitor-1", "--monitor-2"},
+            {"-2", "--monitor-1"}
         };
 
         for (String[] options : combinations) {
             CommandLineController controller = controllerWithVideo(options);
 
             assertThat(controller.getErrorMessage())
-                    .isEqualTo("Only one display option can be used");
+                .isEqualTo("Only one display option can be used");
             assertInvalid(controller);
         }
     }
@@ -112,17 +112,17 @@ public class CommandLineControllerTest {
     @Test
     void init_withIndividualEffects_shouldAcceptShortAndLongForms() {
         String[][] aliases = {
-                {"-n", "--number-frames"},
-                {"-s", "--scratch-frames"},
-                {"-f", "--flicker-frames"},
-                {"-w", "--black-and-white"},
-                {"-y", "--yellow-frames"},
-                {"-v", "--vignette-frames"},
-                {"-d", "--dust-frames"},
-                {"-j", "--jitter-frames"},
-                {"-m", "--mottle-frames"},
-                {"-b", "--bleed-frames"},
-                {"-p", "--pepper-frames"}
+            {"-n", "--number-frames"},
+            {"-s", "--scratch-frames"},
+            {"-f", "--flicker-frames"},
+            {"-w", "--black-and-white"},
+            {"-y", "--yellow-frames"},
+            {"-v", "--vignette-frames"},
+            {"-d", "--dust-frames"},
+            {"-j", "--jitter-frames"},
+            {"-m", "--mottle-frames"},
+            {"-b", "--bleed-frames"},
+            {"-p", "--pepper-frames"}
         };
 
         for (String[] pair : aliases) {
@@ -132,7 +132,7 @@ public class CommandLineControllerTest {
                 CommandLineController controller = controllerWithVideo(option);
 
                 assertThat(controller.getFrameEffects())
-                        .containsExactlyElementsOf(expected);
+                    .containsExactlyElementsOf(expected);
                 assertValid(controller);
             }
         }
@@ -141,28 +141,28 @@ public class CommandLineControllerTest {
     @Test
     void init_withEquivalentEffectCombinations_shouldPreserveOrderAndRepeats() {
         String[][] combinations = {
-                {
-                        "--jitter-frames", "--flicker-frames",
-                        "--dust-frames", "--dust-frames", "--number-frames"
-                },
-                {"-j", "-f", "-d", "-d", "-n"},
-                {"-jfddn"},
-                {"-jf", "--dust-frames", "-d", "--number-frames"}
+            {
+                "--jitter-frames", "--flicker-frames",
+                "--dust-frames", "--dust-frames", "--number-frames"
+            },
+            {"-j", "-f", "-d", "-d", "-n"},
+            {"-jfddn"},
+            {"-jf", "--dust-frames", "-d", "--number-frames"}
         };
 
         List<FrameEffect> expected = expectedEffects(
-                "--jitter-frames",
-                "--flicker-frames",
-                "--dust-frames",
-                "--dust-frames",
-                "--number-frames"
+            "--jitter-frames",
+            "--flicker-frames",
+            "--dust-frames",
+            "--dust-frames",
+            "--number-frames"
         );
 
         for (String[] options : combinations) {
             CommandLineController controller = controllerWithVideo(options);
 
             assertThat(controller.getFrameEffects())
-                    .containsExactlyElementsOf(expected);
+                .containsExactlyElementsOf(expected);
             assertValid(controller);
         }
     }
@@ -170,24 +170,24 @@ public class CommandLineControllerTest {
     @Test
     void init_withAssignmentExample_shouldPreserveEntireSequence() {
         CommandLineController controller =
-                controllerWithVideo("-nssnfwyvdjmbp");
+            controllerWithVideo("-nssnfwyvdjmbp");
 
         assertThat(controller.getFrameEffects())
-                .containsExactlyElementsOf(expectedEffects(
-                        "--number-frames",
-                        "--scratch-frames",
-                        "--scratch-frames",
-                        "--number-frames",
-                        "--flicker-frames",
-                        "--black-and-white",
-                        "--yellow-frames",
-                        "--vignette-frames",
-                        "--dust-frames",
-                        "--jitter-frames",
-                        "--mottle-frames",
-                        "--bleed-frames",
-                        "--pepper-frames"
-                ));
+            .containsExactlyElementsOf(expectedEffects(
+                "--number-frames",
+                "--scratch-frames",
+                "--scratch-frames",
+                "--number-frames",
+                "--flicker-frames",
+                "--black-and-white",
+                "--yellow-frames",
+                "--vignette-frames",
+                "--dust-frames",
+                "--jitter-frames",
+                "--mottle-frames",
+                "--bleed-frames",
+                "--pepper-frames"
+            ));
 
         assertValid(controller);
     }
@@ -195,8 +195,8 @@ public class CommandLineControllerTest {
     @Test
     void init_withLaunchOptionsBetweenEffects_shouldKeepEffectOrder() {
         CommandLineController controller = controllerWithVideo(
-                "-j", "--audio", "-fd", "--maximise",
-                "--monitor-2", "-dn"
+            "-j", "--audio", "-fd", "--maximise",
+            "--monitor-2", "-dn"
         );
 
         assertThat(controller.isAudioRequested()).isTrue();
@@ -204,13 +204,13 @@ public class CommandLineControllerTest {
         assertThat(controller.getDisplayId()).isEqualTo(2);
 
         assertThat(controller.getFrameEffects())
-                .containsExactlyElementsOf(expectedEffects(
-                        "--jitter-frames",
-                        "--flicker-frames",
-                        "--dust-frames",
-                        "--dust-frames",
-                        "--number-frames"
-                ));
+            .containsExactlyElementsOf(expectedEffects(
+                "--jitter-frames",
+                "--flicker-frames",
+                "--dust-frames",
+                "--dust-frames",
+                "--number-frames"
+            ));
 
         assertValid(controller);
     }
@@ -218,18 +218,18 @@ public class CommandLineControllerTest {
     @Test
     void init_withVideoBeforeOptions_shouldStillParseOptions() {
         CommandLineController controller = new CommandLineController(
-                new String[]{
-                        videoFile.getPath(), "--audio", "-jf", "--maximise"
-                }
+            new String[]{
+                videoFile.getPath(), "--audio", "-jf", "--maximise"
+            }
         );
 
         assertThat(controller.getVideoFile()).isEqualTo(videoFile);
         assertThat(controller.isAudioRequested()).isTrue();
         assertThat(controller.isMaximiseRequested()).isTrue();
         assertThat(controller.getFrameEffects())
-                .containsExactlyElementsOf(expectedEffects(
-                        "--jitter-frames", "--flicker-frames"
-                ));
+            .containsExactlyElementsOf(expectedEffects(
+                "--jitter-frames", "--flicker-frames"
+            ));
 
         assertValid(controller);
     }
@@ -238,7 +238,7 @@ public class CommandLineControllerTest {
     void init_withHelpOnly_shouldSucceedWithoutLaunching() {
         for (String option : new String[]{"-h", "--help"}) {
             CommandLineController controller =
-                    new CommandLineController(new String[]{option});
+                new CommandLineController(new String[]{option});
 
             assertThat(controller.getErrorMessage()).isNull();
             assertThat(controller.getExitCode()).isZero();
@@ -250,17 +250,17 @@ public class CommandLineControllerTest {
     @Test
     void init_withoutVideo_shouldReportError() {
         String[][] combinations = {
-                {},
-                {"--audio"},
-                {"--maximise", "-1"},
-                {"-jfddn"}
+            {},
+            {"--audio"},
+            {"--maximise", "-1"},
+            {"-jfddn"}
         };
 
         for (String[] args : combinations) {
             CommandLineController controller = new CommandLineController(args);
 
             assertThat(controller.getErrorMessage())
-                    .isEqualTo("No video file specified.");
+                .isEqualTo("No video file specified.");
             assertThat(controller.getVideoFile()).isNull();
             assertInvalid(controller);
         }
@@ -271,11 +271,11 @@ public class CommandLineControllerTest {
         File missing = tempDir.resolve("missing.mp4").toFile();
 
         CommandLineController controller = new CommandLineController(
-                new String[]{"--audio", missing.getPath()}
+            new String[]{"--audio", missing.getPath()}
         );
 
         assertThat(controller.getErrorMessage())
-                .isEqualTo("File not found: " + missing.getPath());
+            .isEqualTo("File not found: " + missing.getPath());
         assertThat(controller.getVideoFile()).isNull();
         assertInvalid(controller);
     }
@@ -283,11 +283,11 @@ public class CommandLineControllerTest {
     @Test
     void init_withDirectoryInsteadOfFile_shouldReportError() {
         CommandLineController controller = new CommandLineController(
-                new String[]{tempDir.toString()}
+            new String[]{tempDir.toString()}
         );
 
         assertThat(controller.getErrorMessage())
-                .isEqualTo("File not found: " + tempDir);
+            .isEqualTo("File not found: " + tempDir);
         assertThat(controller.getVideoFile()).isNull();
         assertInvalid(controller);
     }
@@ -295,15 +295,15 @@ public class CommandLineControllerTest {
     @Test
     void init_withMultipleFiles_shouldReportUsageError() throws IOException {
         File second = Files.createFile(
-                tempDir.resolve("second.mp4")
+            tempDir.resolve("second.mp4")
         ).toFile();
 
         CommandLineController controller = new CommandLineController(
-                new String[]{videoFile.getPath(), "-a", second.getPath()}
+            new String[]{videoFile.getPath(), "-a", second.getPath()}
         );
 
         assertThat(controller.getErrorMessage())
-                .isEqualTo("Usage: VideoPlayer [options] [video-file]");
+            .isEqualTo("Usage: VideoPlayer [options] [video-file]");
         assertInvalid(controller);
     }
 
@@ -312,7 +312,7 @@ public class CommandLineControllerTest {
         CommandLineController controller = controllerWithVideo("-ajq");
 
         assertThat(controller.getErrorMessage())
-                .isEqualTo("Unknown option: -q");
+            .isEqualTo("Unknown option: -q");
         assertInvalid(controller);
     }
 
@@ -321,7 +321,7 @@ public class CommandLineControllerTest {
         CommandLineController controller = controllerWithVideo("-jf");
 
         assertThatThrownBy(() -> controller.getFrameEffects().clear())
-                .isInstanceOf(UnsupportedOperationException.class);
+            .isInstanceOf(UnsupportedOperationException.class);
 
         assertThat(controller.getFrameEffects()).hasSize(2);
     }
@@ -335,11 +335,11 @@ public class CommandLineControllerTest {
         assertThat(controller.getDisplayId()).isEqualTo(2);
 
         assertThat(controller.getFrameEffects()).containsExactly(
-                FrameEffect.JITTER,
-                FrameEffect.FLICKER,
-                FrameEffect.DUST,
-                FrameEffect.DUST,
-                FrameEffect.NUMBER
+            FrameEffect.JITTER,
+            FrameEffect.FLICKER,
+            FrameEffect.DUST,
+            FrameEffect.DUST,
+            FrameEffect.NUMBER
         );
 
         assertValid(controller);
@@ -360,14 +360,14 @@ public class CommandLineControllerTest {
 
         String expected = """
             Usage: VideoPlayer [options] [video-file]
-
+            
             Options:
               -h, --help         Show this help message
               -a, --audio        Play audio
               -x, --maximise     Open the player maximised
               -1, --monitor-1    Open the player on display 1
               -2, --monitor-2    Open the player on display 2
-
+            
             Frame processors:
               -n, --number-frames    Render the frame number onto each frame
               -s, --scratch-frames   Render vertical film scratches
@@ -380,27 +380,27 @@ public class CommandLineControllerTest {
               -m, --mottle-frames    Add cloudy emulsion mottling
               -b, --bleed-frames     Bleed light into frames
               -p, --pepper-frames    Pepper frames with dark spots/blotches
-
+            
             Frame processors are applied in command-line order and may be repeated.
             Example: -nssnfwyvdjmbp numbers, scratches twice, numbers again, flickers,
             converts, warms, vignettes, dusts, jitters, mottles, bleeds, then peppers.
             """;
 
         assertThat(output.toString().replace("\r\n", "\n"))
-                .isEqualTo(expected);
+            .isEqualTo(expected);
     }
 
     @Test
     void init_withUnknownOptionAndMissingFile_shouldPreserveFirstError() {
         CommandLineController controller = new CommandLineController(
-                new String[]{
-                        "-q",
-                        tempDir.resolve("missing.mp4").toString()
-                }
+            new String[]{
+                "-q",
+                tempDir.resolve("missing.mp4").toString()
+            }
         );
 
         assertThat(controller.getErrorMessage())
-                .isEqualTo("Unknown option: -q");
+            .isEqualTo("Unknown option: -q");
         assertInvalid(controller);
     }
 
@@ -428,7 +428,7 @@ public class CommandLineControllerTest {
                 case "--bleed-frames" -> FrameEffect.BLEED;
                 case "--pepper-frames" -> FrameEffect.PEPPER;
                 default -> throw new IllegalArgumentException(
-                        "Unknown test option: " + option
+                    "Unknown test option: " + option
                 );
             };
 

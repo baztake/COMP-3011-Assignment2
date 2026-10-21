@@ -1,7 +1,7 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
  *   2. <student name and student number insert here upon modification>
@@ -10,12 +10,12 @@
  */
 package comp3011;
 
+import org.bytedeco.javacv.Frame;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-
-import org.bytedeco.javacv.Frame;
 
 /**
  * Draws moving vertical scratches to simulate damaged film stock. Some scratches are one pixel wide, some are two. They
@@ -150,8 +150,8 @@ public class FrameScratcher extends FrameProcessor {
 
         if (thick && videoInfo.imageWidth() > 1) {
             int secondX = x + 1 < videoInfo.imageWidth()
-                    ? x + 1
-                    : x - 1;
+                ? x + 1
+                : x - 1;
             drawSinglePixelVerticalLine(pixels, secondX, yStart, yEnd);
         }
     }
@@ -172,10 +172,10 @@ public class FrameScratcher extends FrameProcessor {
     }
 
     private record Scratch(
-            double startFrame,
-            double endFrame,
-            int xStart,
-            int xEnd,
-            boolean thick) {
+        double startFrame,
+        double endFrame,
+        int xStart,
+        int xEnd,
+        boolean thick) {
     }
 }

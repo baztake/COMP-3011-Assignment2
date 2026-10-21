@@ -1,10 +1,10 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. Bailey Staykov, a1886621
+ *   2. Bailey Staykov, a1886621, in collaboration with GPT-6.1 Sol
  *
  * Copyright 2026 Simon Ratcliffe
  */
@@ -25,14 +25,13 @@ import java.util.List;
  */
 public class CommandLineController {
     private final String[] args;
-
+    private final List<FrameEffect> effects = new ArrayList<>();
     private boolean helpRequested;
     private boolean audioRequested;
     private boolean maximiseRequested;
     private Integer displayId;
     private File videoFile;
     private String errorMessage;
-    private final List<FrameEffect> effects = new ArrayList<>();
 
     public CommandLineController(String[] args) {
         this.args = args.clone();
@@ -59,6 +58,14 @@ public class CommandLineController {
 
     public Integer getDisplayId() {
         return displayId;
+    }
+
+    private void setDisplayId(int displayId) {
+        if (this.displayId != null && this.displayId != displayId) {
+            reportError("Only one display option can be used");
+            return;
+        }
+        this.displayId = displayId;
     }
 
     public List<FrameEffect> getFrameEffects() {
@@ -127,14 +134,6 @@ public class CommandLineController {
             case "-2", "--monitor-2" -> setDisplayId(2);
             default -> reportError("Unknown option: " + option);
         }
-    }
-
-    private void setDisplayId(int displayId) {
-        if (this.displayId != null && this.displayId != displayId) {
-            reportError("Only one display option can be used");
-            return;
-        }
-        this.displayId = displayId;
     }
 
     private void printHelp() {

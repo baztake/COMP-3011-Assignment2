@@ -1,7 +1,7 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
  *   2. <student name and student number insert here upon modification>
@@ -10,9 +10,9 @@
  */
 package comp3011;
 
-import java.nio.ByteBuffer;
-
 import org.bytedeco.javacv.Frame;
+
+import java.nio.ByteBuffer;
 
 /**
  * Draws the current video-frame number in the bottom-right corner of each frame,
@@ -42,16 +42,16 @@ public class FrameNumberer extends FrameProcessor {
 
     // 7-segment display rendering rules for each decimal digit:
     private static final int[] DIGIT_SEGMENTS = {
-            /* 0 */ TOP | UPPER_LEFT | UPPER_RIGHT | LOWER_LEFT | LOWER_RIGHT | BOTTOM,
-            /* 1 */ UPPER_RIGHT | LOWER_RIGHT,
-            /* 2 */ TOP | UPPER_RIGHT | MIDDLE | LOWER_LEFT | BOTTOM,
-            /* 3 */ TOP | UPPER_RIGHT | MIDDLE | LOWER_RIGHT | BOTTOM,
-            /* 4 */ UPPER_LEFT | UPPER_RIGHT | MIDDLE | LOWER_RIGHT,
-            /* 5 */ TOP | UPPER_LEFT | MIDDLE | LOWER_RIGHT | BOTTOM,
-            /* 6 */ TOP | UPPER_LEFT | MIDDLE | LOWER_LEFT | LOWER_RIGHT | BOTTOM,
-            /* 7 */ TOP | UPPER_RIGHT | LOWER_RIGHT,
-            /* 8 */ TOP | UPPER_LEFT | UPPER_RIGHT | MIDDLE | LOWER_LEFT | LOWER_RIGHT | BOTTOM,
-            /* 9 */ TOP | UPPER_LEFT | UPPER_RIGHT | MIDDLE | LOWER_RIGHT | BOTTOM
+        /* 0 */ TOP | UPPER_LEFT | UPPER_RIGHT | LOWER_LEFT | LOWER_RIGHT | BOTTOM,
+        /* 1 */ UPPER_RIGHT | LOWER_RIGHT,
+        /* 2 */ TOP | UPPER_RIGHT | MIDDLE | LOWER_LEFT | BOTTOM,
+        /* 3 */ TOP | UPPER_RIGHT | MIDDLE | LOWER_RIGHT | BOTTOM,
+        /* 4 */ UPPER_LEFT | UPPER_RIGHT | MIDDLE | LOWER_RIGHT,
+        /* 5 */ TOP | UPPER_LEFT | MIDDLE | LOWER_RIGHT | BOTTOM,
+        /* 6 */ TOP | UPPER_LEFT | MIDDLE | LOWER_LEFT | LOWER_RIGHT | BOTTOM,
+        /* 7 */ TOP | UPPER_RIGHT | LOWER_RIGHT,
+        /* 8 */ TOP | UPPER_LEFT | UPPER_RIGHT | MIDDLE | LOWER_LEFT | LOWER_RIGHT | BOTTOM,
+        /* 9 */ TOP | UPPER_LEFT | UPPER_RIGHT | MIDDLE | LOWER_RIGHT | BOTTOM
     };
 
     public FrameNumberer() {
@@ -127,12 +127,12 @@ public class FrameNumberer extends FrameProcessor {
     }
 
     private void fillRectangle(
-            ByteBuffer pixels,
-            int x,
-            int y,
-            int width,
-            int height,
-            int value) {
+        ByteBuffer pixels,
+        int x,
+        int y,
+        int width,
+        int height,
+        int value) {
         for (int row = y; row < y + height; row++) {
             for (int column = x; column < x + width; column++) {
                 setPixel(pixels, column, row, value);

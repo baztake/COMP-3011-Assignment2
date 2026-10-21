@@ -1,7 +1,7 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
  *   2. <student name and student number insert here upon modification>
@@ -10,10 +10,10 @@
  */
 package comp3011;
 
+import org.bytedeco.javacv.Frame;
+
 import java.nio.ByteBuffer;
 import java.util.Random;
-
-import org.bytedeco.javacv.Frame;
 
 /**
  * Adds irregular dark spots and blotches to simulate damaged film.
@@ -144,15 +144,15 @@ public class FramePepperer extends FrameProcessor {
 
         PepperShape shape = randomPepperShape(random);
         drawPepperShape(
-                pixels,
-                centreX,
-                centreY,
-                radiusX,
-                radiusY,
-                rotation,
-                opacity,
-                edgeSoftness,
-                shape);
+            pixels,
+            centreX,
+            centreY,
+            radiusX,
+            radiusY,
+            rotation,
+            opacity,
+            edgeSoftness,
+            shape);
     }
 
     private double randomSize(Random random) {
@@ -162,24 +162,24 @@ public class FramePepperer extends FrameProcessor {
 
     private PepperShape randomPepperShape(Random random) {
         return new PepperShape(
-                random.nextDouble() * 2.0 * Math.PI,
-                random.nextDouble() * 2.0 * Math.PI,
-                random.nextDouble() * 2.0 * Math.PI,
-                randomBetween(random, -MAX_BOUNDARY_WARP, MAX_BOUNDARY_WARP),
-                randomBetween(random, -MAX_BOUNDARY_WARP, MAX_BOUNDARY_WARP),
-                randomBetween(random, -MAX_BOUNDARY_WARP, MAX_BOUNDARY_WARP));
+            random.nextDouble() * 2.0 * Math.PI,
+            random.nextDouble() * 2.0 * Math.PI,
+            random.nextDouble() * 2.0 * Math.PI,
+            randomBetween(random, -MAX_BOUNDARY_WARP, MAX_BOUNDARY_WARP),
+            randomBetween(random, -MAX_BOUNDARY_WARP, MAX_BOUNDARY_WARP),
+            randomBetween(random, -MAX_BOUNDARY_WARP, MAX_BOUNDARY_WARP));
     }
 
     private void drawPepperShape(
-            ByteBuffer pixels,
-            double centreX,
-            double centreY,
-            double radiusX,
-            double radiusY,
-            double rotation,
-            double opacity,
-            double edgeSoftness,
-            PepperShape shape) {
+        ByteBuffer pixels,
+        double centreX,
+        double centreY,
+        double radiusX,
+        double radiusY,
+        double rotation,
+        double opacity,
+        double edgeSoftness,
+        PepperShape shape) {
         double maximumRadius = Math.hypot(radiusX, radiusY) * (1.0 + MAX_BOUNDARY_WARP + edgeSoftness);
         int minX = clamp((int) Math.floor(centreX - maximumRadius), 0, videoInfo.imageWidth() - 1);
         int maxX = clamp((int) Math.ceil(centreX + maximumRadius), 0, videoInfo.imageWidth() - 1);
@@ -202,8 +202,8 @@ public class FramePepperer extends FrameProcessor {
 
                 if (distance < warpedBoundary) {
                     double coverage = distance <= edgeStart
-                            ? 1.0
-                            : (warpedBoundary - distance) / Math.max(0.0001, warpedBoundary - edgeStart);
+                        ? 1.0
+                        : (warpedBoundary - distance) / Math.max(0.0001, warpedBoundary - edgeStart);
                     double alpha = opacity * smoothstep(coverage);
                     darkenPixel(pixels, x, y, alpha);
                 }
@@ -239,18 +239,18 @@ public class FramePepperer extends FrameProcessor {
     }
 
     private record PepperShape(
-            double phase2,
-            double phase3,
-            double phase5,
-            double harmonic2,
-            double harmonic3,
-            double harmonic5) {
+        double phase2,
+        double phase3,
+        double phase5,
+        double harmonic2,
+        double harmonic3,
+        double harmonic5) {
 
         private double radiusScale(double angle) {
             double scale = 1.0
-                    + harmonic2 * Math.sin(2.0 * angle + phase2)
-                    + harmonic3 * Math.sin(3.0 * angle + phase3)
-                    + harmonic5 * Math.sin(5.0 * angle + phase5);
+                + harmonic2 * Math.sin(2.0 * angle + phase2)
+                + harmonic3 * Math.sin(3.0 * angle + phase3)
+                + harmonic5 * Math.sin(5.0 * angle + phase5);
             return Math.max(0.35, scale);
         }
     }

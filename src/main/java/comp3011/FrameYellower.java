@@ -1,7 +1,7 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
  *   2. <student name and student number insert here upon modification>
@@ -10,9 +10,9 @@
  */
 package comp3011;
 
-import java.nio.ByteBuffer;
-
 import org.bytedeco.javacv.Frame;
+
+import java.nio.ByteBuffer;
 
 /**
  * Warms frame colours to simulate a lower colour-temperature film image. This is not really a film stock thing, more an
@@ -99,8 +99,8 @@ public class FrameYellower extends FrameProcessor {
             red = 255.0;
             green = 99.4708025861 * Math.log(temperature) - 161.1195681661;
             blue = temperature <= 19.0
-                    ? 0.0
-                    : 138.5177312231 * Math.log(temperature - 10.0) - 305.0447927307;
+                ? 0.0
+                : 138.5177312231 * Math.log(temperature - 10.0) - 305.0447927307;
         } else {
             red = 329.698727446 * Math.pow(temperature - 60.0, -0.1332047592);
             green = 288.1221695283 * Math.pow(temperature - 60.0, -0.0755148492);
@@ -108,9 +108,9 @@ public class FrameYellower extends FrameProcessor {
         }
 
         return new Rgb(
-                clamp(red, 0.0, 255.0),
-                clamp(green, 0.0, 255.0),
-                clamp(blue, 0.0, 255.0));
+            clamp(red, 0.0, 255.0),
+            clamp(green, 0.0, 255.0),
+            clamp(blue, 0.0, 255.0));
     }
 
     private void yellowFrame(ByteBuffer pixels) {
@@ -140,8 +140,8 @@ public class FrameYellower extends FrameProcessor {
     }
 
     private record Rgb(
-            double red,
-            double green,
-            double blue) {
+        double red,
+        double green,
+        double blue) {
     }
 }
