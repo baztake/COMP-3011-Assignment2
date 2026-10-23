@@ -197,3 +197,9 @@ The final checks will include `mvn verify` and manual playback testing.
   once. This is documented in the Javadocs of every constructor that needs it.
 - Following on from this, I updated the FrameEffect enum to use the new variable in construction, then update that usage
   in the VideoPlayerModel. Updated tests accordingly
+- Based on my plan, I started working on the FrameProcessingPool as the first bit of concurrency in the application.
+  This involves first creating a worker class that handles processing an individual frame. The worker class encapsulates
+  the logic for applying the effects in order, then returning the processed frame for display by the JavaFX thread.
+- An important concurrency consideration for these workers is that they must not share a mutable state, so it has been
+  documented that each worker must be supplied with its own instances of the effect processors. This is to avoid any
+  race conditions or unexpected behaviour when multiple workers are processing frames simultaneously.
