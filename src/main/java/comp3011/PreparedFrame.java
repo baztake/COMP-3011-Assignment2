@@ -5,5 +5,6 @@ import javafx.scene.image.Image;
 public record PreparedFrame(
     Image image,
     InfoFrame info,
-    long generation) {
+    long generation
+) {
 }

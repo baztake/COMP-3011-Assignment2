@@ -203,3 +203,14 @@ The final checks will include `mvn verify` and manual playback testing.
 - An important concurrency consideration for these workers is that they must not share a mutable state, so it has been
   documented that each worker must be supplied with its own instances of the effect processors. This is to avoid any
   race conditions or unexpected behaviour when multiple workers are processing frames simultaneously.
+- Implemented the first version of FrameProcessingPool using a fixed thread pool. Each executor thread gets its own
+  FrameProcessingWorker through ThreadLocal storage, with the supplied factory responsible for creating separate,
+  initialised processor instances.
+- To preserve frame ordering, I queue futures when frames are submitted rather than when processing finishes. pollReady
+  only checks the head of the queue, returning null if it is unfinished so later frames cannot overtake it.
+- The submit, pollReady and close methods are synchronised to protect the queue and coordinate submission with shutdown.
+  Successfully submitted frames are closed in a finally block after processing, including when processing fails.
+- Added a focused ordering test using Mockito and latches. The first task is held while the second progresses, then the
+  test checks that polling returns null until the first is released and that results follow submission order.
+- Next, I will limit outstanding frames so decoding cannot build up an unlimited backlog. Capacity will be released when
+  a frame is displayed or discarded, rather than when processing finishes.
