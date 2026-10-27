@@ -3,15 +3,13 @@
  */
 package comp3011;
 
+import lombok.extern.slf4j.Slf4j;
 import org.bytedeco.javacv.Frame;
 
 import java.util.ArrayDeque;
 import java.util.Queue;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 /**
@@ -21,6 +19,7 @@ import java.util.function.Supplier;
  * Synchronised methods protect queue access and coordinate shutdown.
  * The factory must supply separate, initialised workers and processor instances.
  */
+@Slf4j
 public class FrameProcessingPool implements AutoCloseable {
 
     private final ExecutorService executor;
@@ -28,7 +27,7 @@ public class FrameProcessingPool implements AutoCloseable {
     private final ThreadLocal<FrameProcessingWorker> workers;
 
     // Queue positions represent submission order, regardless of when the corresponding processing tasks finish.
-    private final Queue<Future<PreparedFrame>> results = new ArrayDeque<>();
+    private final Queue<FrameTask> results = new ArrayDeque<>();
 
     // Only used in synchronised methods.
     private boolean closed;
@@ -80,13 +79,11 @@ public class FrameProcessingPool implements AutoCloseable {
             throw new RejectedExecutionException("Frame processing pool is closed");
         }
 
-        Future<PreparedFrame> result = executor.submit(() -> {
-            try {
-                return workers.get().process(frame, info, generation);
-            } finally {
-                frame.close();
-            }
-        });
+        FrameTask result = new FrameTask(frame, info, generation);
+
+        // Execute directly so the executor does not wrap our task in another future.
+        // Rejection leaves the input owned by the caller.
+        executor.execute(result);
 
         // Completion does not free space; the future stays queued until polled.
         results.add(result);
@@ -104,7 +101,7 @@ public class FrameProcessingPool implements AutoCloseable {
     public synchronized PreparedFrame pollReady() throws ExecutionException, InterruptedException {
         // Inspect only the oldest submission.
         // Searching for any completed future would allow later frames to overtake earlier ones.
-        Future<PreparedFrame> next = results.peek();
+        FrameTask next = results.peek();
 
         if (next == null || !next.isDone()) {
             // Leave the head in place until its processing has finished.
@@ -121,6 +118,30 @@ public class FrameProcessingPool implements AutoCloseable {
     }
 
     /**
+     * Rejects submissions, cancels accepted work and discards queued results.
+     * Running tasks retain their inputs until execution exits.
+     * Queued tasks release their inputs without running processors.
+     * Does not wait for termination and can escalate a graceful close.
+     * Input cleanup failures are logged without stopping remaining cancellation.
+     */
+    public synchronized void requestStop() {
+        closed = true;
+
+        try {
+            // Interrupt workers and remove executor-queued work.
+            // Our results queue still tracks those tasks for cancellation.
+            executor.shutdownNow();
+
+            for (FrameTask task : results) {
+                task.cancel(true);
+            }
+        } finally {
+            results.clear();
+            notifyAll();
+        }
+    }
+
+    /**
      * Rejects new work and wakes submitters waiting for queue space.
      * Accepted tasks finish normally and their results remain available for polling.
      * Does not cancel tasks or wait for termination.
@@ -130,5 +151,79 @@ public class FrameProcessingPool implements AutoCloseable {
         closed = true;
         executor.shutdown();
         notifyAll();
+    }
+
+    /**
+     * Waits for executor tasks to exit after close or requestStop has returned.
+     * Call from a lifecycle thread, never JavaFX or a processing worker.
+     * Confirms worker termination, not successful input cleanup.
+     *
+     * @param timeout maximum time to wait
+     * @param unit    unit of the timeout
+     * @return true if executor tasks have exited, otherwise false on timeout
+     * @throws InterruptedException if the waiting thread is interrupted
+     */
+    public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+        return executor.awaitTermination(timeout, unit);
+    }
+
+    /**
+     * Owns one accepted input and arbitrates execution against queued cancellation.
+     * The atomic claim selects the only path allowed to close the input.
+     */
+    private class FrameTask extends FutureTask<PreparedFrame> {
+        private final Frame input;
+        private final AtomicBoolean inputClaimed = new AtomicBoolean();
+
+        /**
+         * Creates an unsubmitted task without transferring input ownership.
+         *
+         * @param input      copied frame to process after acceptance
+         * @param info       frame number and media timestamp
+         * @param generation playback generation associated with the frame
+         */
+        private FrameTask(Frame input, InfoFrame info, long generation) {
+            super(() -> workers.get().process(input, info, generation));
+            this.input = input;
+        }
+
+        /**
+         * Claims the input for execution and closes it when execution exits.
+         * A cancellation that already claimed the input prevents execution.
+         * The future can complete before the final input close.
+         */
+        @Override
+        public void run() {
+            if (inputClaimed.compareAndSet(false, true)) {
+                try {
+                    super.run();
+                } finally {
+                    releaseInput();
+                }
+            }
+        }
+
+        /**
+         * Releases cancelled input only when execution has not claimed it.
+         * Running input cleanup remains the responsibility of run.
+         */
+        @Override
+        protected void done() {
+            if (isCancelled() && inputClaimed.compareAndSet(false, true)) {
+                releaseInput();
+            }
+        }
+
+        /**
+         * Attempts to close input and logs any cleanup failure.
+         * A failed close must not prevent cancellation of other queued tasks.
+         */
+        private void releaseInput() {
+            try {
+                input.close();
+            } catch (RuntimeException failure) {
+                log.error("Failed to close frame input", failure);
+            }
+        }
     }
 }

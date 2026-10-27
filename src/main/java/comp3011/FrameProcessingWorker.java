@@ -26,31 +26,42 @@ public class FrameProcessingWorker {
      *
      * @param processors the processors to apply to each frame, in order
      */
-    public FrameProcessingWorker(
-        List<FrameProcessor> processors
-    ) {
+    public FrameProcessingWorker(List<FrameProcessor> processors) {
         this.processors = List.copyOf(processors);
     }
 
     /**
-     * Processes a frame using the worker's processors and returns a prepared frame.
+     * Applies effects in order and converts the processed frame.
+     * Checks for cancellation before each effect and before conversion.
      *
-     * @param frame the frame to process
-     * @param info the info frame associated with the frame
-     * @param generation the generation number of the frame
-     * @return a prepared frame containing the processed image, info, and generation
-     * @throws Exception if any processor throws an exception during processing
+     * @param frame      input frame owned by the calling task
+     * @param info       frame number and media timestamp
+     * @param generation playback generation associated with the frame
+     * @return processed image with its metadata and generation
+     * @throws InterruptedException if cancellation is detected
+     * @throws Exception            if processing or conversion fails
      */
-    public PreparedFrame process(
-        Frame frame,
-        InfoFrame info,
-        long generation
-    ) throws Exception {
+    public PreparedFrame process(Frame frame, InfoFrame info, long generation) throws Exception {
         for (FrameProcessor processor : processors) {
+            throwIfInterrupted();
             processor.process(frame, info);
         }
 
+        // Covers interruption during the final effect and an empty effect chain.
+        throwIfInterrupted();
+
         Image image = converter.convert(frame);
         return new PreparedFrame(image, info, generation);
+    }
+
+    /**
+     * Checks if the current thread has been interrupted.
+     *
+     * @throws InterruptedException if the thread has been interrupted
+     */
+    private void throwIfInterrupted() throws InterruptedException {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new InterruptedException("Frame processing cancelled");
+        }
     }
 }

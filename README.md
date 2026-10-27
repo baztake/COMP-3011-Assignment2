@@ -30,7 +30,7 @@ Based on Seminar 7, the first step is to ask the following questions:
 - The main challenge is managing the synchronisation and communication between the different threads.
 - Based on this, we must also measure how effectively the available CPU capacity is used.
 
-4. Introduced costs: What switching, resource, contention and coordination costs are introduced?
+4. Introduced costs: What switching, resource, contention, and coordination costs are introduced?
 
 - Adding multiple threads introduces scheduling and context switching overheads. Frame copies for worker threads and
   effect stacking increase memory usage. Workers may also compete for CPU time, and the GUI thread may be blocked if the
@@ -117,12 +117,12 @@ The following table will be used to define where synchronisation is required, an
 | Session startup/teardown                                          | Single lifecycle executor                                       | Ordered lifecycle operations, with no GUI-thread waits                    |
 
 The fixed executor limits the number of processing workers. The semaphore limits outstanding frames (queued jobs,
-running jobs, completed results and the next frame waiting for presentation)
+running jobs, completed results, and the next frame waiting for presentation)
 
 #### Passing Frames Between Threads
 
 The decoder copies each video frame before submitting it to the worker pool, because the grabber can reuse its frame
-memory on the next grab. Each task includes the frame number, timestamp and playback generation.
+memory on the next grab. Each task includes the frame number, timestamp, and playback generation.
 
 Each frame belongs to one worker while its effects are being applied. Once processing finishes, the worker passes the
 completed image back for display and does not change it again. This avoids multiple threads modifying the same frame.
@@ -151,7 +151,7 @@ so playback continues from the same position.
 Audio runs on a separate thread using the same playback timing. Audio samples are copied before the decoder continues,
 and only the audio thread accesses the audio device.
 
-The JavaFX thread handles controls and displays completed frames. Decoding, effects, audio writes and waiting for
+The JavaFX thread handles controls and displays completed frames. Decoding, effects, audio writes, and waiting for
 workers happen elsewhere, keeping the interface responsive.
 
 #### Playback Controls
@@ -179,14 +179,15 @@ Correctness will be checked before comparing performance.
 - Compare frame order, effect order and output against the single-threaded version, including repeated and random
   effects.
 - Force frames to finish out of order and check that display order stays correct.
-- Test pause, resume, rapid seeking, seeking while paused, stopping with full buffers and reaching the end of the video.
+- Test pause, resume, rapid seeking, seeking while paused, stopping with full buffers, and reaching the end of the
+  video.
 - Check that errors and cancellation release resources without freezing the GUI.
 
-Performance tests will use the same video, effects and machine for both versions. Several runs will compare processing
-time, playback smoothness, GUI responsiveness and memory use, with audio both enabled and disabled.
+Performance tests will use the same video, effects, and machine for both versions. Several runs will compare processing
+time, playback smoothness, GUI responsiveness, and memory use, with audio both enabled and disabled.
 
 Worker counts and buffer sizes will be adjusted using these results. More workers may improve effect processing, but
-decoding, display timing and coordination still limit the overall improvement.
+decoding, display timing, and coordination still limit the overall improvement.
 
 The final checks will include `mvn verify` and manual playback testing.
 
@@ -208,8 +209,9 @@ The final checks will include `mvn verify` and manual playback testing.
   initialised processor instances.
 - To preserve frame ordering, I queue futures when frames are submitted rather than when processing finishes. pollReady
   only checks the head of the queue, returning null if it is unfinished so later frames cannot overtake it.
-- The submit, pollReady and close methods are synchronised to protect the queue and coordinate submission with shutdown.
-  Successfully submitted frames are closed in a finally block after processing, including when processing fails.
+- The submit, pollReady, and close methods are synchronised to protect the queue and coordinate submission with
+  shutdown. Successfully submitted frames are closed in a finally block after processing, including when processing
+  fails.
 - Added a focused ordering test using Mockito and latches. The first task is held while the second progresses, then the
   test checks that polling returns null until the first is released and that results follow submission order.
 - Next, I will limit outstanding frames so decoding cannot build up an unlimited backlog. Capacity will be released when
@@ -221,3 +223,14 @@ The final checks will include `mvn verify` and manual playback testing.
 - Sleeping threads are awoken when a result is polled, which immediately checks the size again to prevent a race where
   two sleeping threads were woken up. We only plan for a single decoder thread at the moment, but this allows multiple.
 - Added tests for sleeping on full queue and waking when space is freed to ensure concurrency-correctness.
+- Next step is to add cancellation of frames in the queue, e.g. if we need to discard a frame before it is displayed, we
+  don't want to waste resources processing it.
+- Updated the FrameProcessingWorker to check for interrupts between adding effects, throwing an exception if
+  interrupted.
+- Added requestStop to interrupt processing, cancel accepted tasks, and discard buffered results.
+- Encapsulated processing in a FrameTask with an atomic input-ownership claim. Queued cancellation releases its copied
+  frame, while running tasks retain ownership until processing exits, preventing double release or closing input still
+  in use.
+- Added awaitTermination to report worker termination
+- Added a test to verify that requestStop cancels queued work and releases accepted input frames, and that
+  awaitTermination confirms the workers have stopped.

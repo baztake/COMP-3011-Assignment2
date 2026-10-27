@@ -195,6 +195,65 @@ class FrameProcessingPoolTest {
         }
     }
 
+    /**
+     * Checks that stopping cancels work, closes accepted inputs and terminates workers.
+     *
+     * @throws Exception if processing or test coordination fails
+     */
+    @Test
+    @Timeout(10)
+    void shouldCancelWorkAndReleaseInputs() throws Exception {
+        // Assemble
+        FrameProcessingWorker worker = mock(FrameProcessingWorker.class);
+        Frame runningInput = mock(Frame.class);
+        Frame queuedInput = mock(Frame.class);
+        InfoFrame info = new InfoFrame(1, 0);
+
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+
+        // Mocking the frame processing
+        // Hold the running task until it is interrupted or released
+        when(worker.process(runningInput, info, 0)).thenAnswer(_ -> {
+            started.countDown();
+            release.await();
+            return new PreparedFrame(null, info, 0);
+        });
+
+        // Create a pool with one worker so the second frame stays queued
+        try (FrameProcessingPool pool = new FrameProcessingPool(1, 2, () -> worker)) {
+            try {
+                // Act
+                pool.submit(runningInput, info, 0);
+
+                // Wait up to 3 seconds for the first frame to start processing
+                boolean processingStarted = started.await(3, TimeUnit.SECONDS);
+                pool.submit(queuedInput, info, 0);
+
+                // Stop the pool and wait for workers to terminate
+                pool.requestStop();
+                boolean terminated = pool.awaitTermination(3, TimeUnit.SECONDS);
+
+                // Assert
+                // Ensure processing started and the worker stopped
+                assertThat(processingStarted).isTrue();
+                assertThat(terminated).isTrue();
+
+                // Ensure both inputs were closed exactly once
+                verify(runningInput).close();
+                verify(queuedInput).close();
+
+                // Ensure the queued frame was never processed
+                verify(worker, never()).process(queuedInput, info, 0);
+            } finally {
+                // Release blocked processing if the test fails or times out
+                release.countDown();
+                pool.requestStop();
+                pool.awaitTermination(3, TimeUnit.SECONDS);
+            }
+        }
+    }
+
     private PreparedFrame awaitResult(FrameProcessingPool pool) throws Exception {
         PreparedFrame result;
         while ((result = pool.pollReady()) == null) {
