@@ -214,3 +214,10 @@ The final checks will include `mvn verify` and manual playback testing.
   test checks that polling returns null until the first is released and that results follow submission order.
 - Next, I will limit outstanding frames so decoding cannot build up an unlimited backlog. Capacity will be released when
   a frame is displayed or discarded, rather than when processing finishes.
+- Limited the result queue in the FrameProcessingPool to a fixed size. This doesn't include the single prepared frame
+  stored by the JavaFX thread waiting for presentation.
+- Submitting a frame now requires the pool to not be closed, and the size of the queue to be less than the capacity. If
+  it isn't, the thread will sleep.
+- Sleeping threads are awoken when a result is polled, which immediately checks the size again to prevent a race where
+  two sleeping threads were woken up. We only plan for a single decoder thread at the moment, but this allows multiple.
+- Added tests for sleeping on full queue and waking when space is freed to ensure concurrency-correctness.

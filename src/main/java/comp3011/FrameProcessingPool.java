@@ -7,6 +7,7 @@ import org.bytedeco.javacv.Frame;
 
 import java.util.ArrayDeque;
 import java.util.Queue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -17,46 +18,68 @@ import java.util.function.Supplier;
  * Processes frames concurrently and returns results in submission order.
  * A FIFO queue holds futures, so later frames cannot overtake its head.
  * Each executor thread owns a worker with separate processor instances.
- * Synchronized methods protect queue access and coordinate shutdown.
- * Outstanding work is not yet bounded.
+ * Synchronised methods protect queue access and coordinate shutdown.
+ * The factory must supply separate, initialised workers and processor instances.
  */
 public class FrameProcessingPool implements AutoCloseable {
 
     private final ExecutorService executor;
+    private final int maxQueuedFrames;
     private final ThreadLocal<FrameProcessingWorker> workers;
 
-    // Queue positions represent submission order, regardless of when
-    // the corresponding processing tasks finish.
+    // Queue positions represent submission order, regardless of when the corresponding processing tasks finish.
     private final Queue<Future<PreparedFrame>> results = new ArrayDeque<>();
+
+    // Only used in synchronised methods.
+    private boolean closed;
 
     /**
      * Creates a fixed-size pool with worker-private processing state.
+     * Initialises pool with a limit on accepted, non-displayed frames.
      *
-     * @param workerCount number of processing threads
-     * @param workerFactory supplies fresh workers with initialized processors
+     * @param workerCount     number of processing threads
+     * @param maxQueuedFrames maximum number of frames to be processing/processed waiting for display
+     * @param workerFactory   supplies fresh workers with initialised processors
      * @throws IllegalArgumentException if workerCount is not positive
-     * @throws NullPointerException if workerFactory is null
+     * @throws NullPointerException     if workerFactory is null
      */
-    public FrameProcessingPool(int workerCount, Supplier<FrameProcessingWorker> workerFactory) {
+    public FrameProcessingPool(int workerCount, int maxQueuedFrames, Supplier<FrameProcessingWorker> workerFactory) {
         if (workerCount <= 0) {
             throw new IllegalArgumentException("Worker count must be positive");
         }
-
+        if (maxQueuedFrames <= 0) {
+            throw new IllegalArgumentException("Max queued frames must be positive");
+        }
+        this.maxQueuedFrames = maxQueuedFrames;
         this.workers = ThreadLocal.withInitial(workerFactory);
         this.executor = Executors.newFixedThreadPool(workerCount);
     }
 
     /**
-     * Submits a copied frame and queues its future in submission order.
-     * The task owns and closes the frame after successful submission.
-     * Rejected submission leaves ownership with the caller.
+     * Waits for queue space and submits a copied frame.
+     * Call from the decoder thread because a full queue can block submission.
+     * Successful submission transfers ownership to the task, which closes the input.
+     * Waiting, interrupted, or rejected submissions leave ownership with the caller.
      *
-     * @param frame copied input frame to process
-     * @param info frame number and media timestamp
+     * @param frame      copied input frame to process
+     * @param info       frame number and media timestamp
      * @param generation playback generation associated with the frame
-     * @throws java.util.concurrent.RejectedExecutionException if the pool no longer accepts work
+     * @throws InterruptedException       if interrupted while waiting for queue space
+     * @throws RejectedExecutionException if the pool is closed
      */
-    public synchronized void submit(Frame frame, InfoFrame info, long generation) {
+    public synchronized void submit(Frame frame, InfoFrame info, long generation) throws InterruptedException {
+        // This method is synchronised, so we use a while loop here to ensure that if another thread wakes and takes the
+        // space first, this thread will go back to sleep
+        while (!closed && results.size() >= maxQueuedFrames) {
+            // If the size of the queue is greater than the maximum allowed, wait until space is available.
+            wait();
+        }
+
+        // If the pool is closed, throw an exception.
+        if (closed) {
+            throw new RejectedExecutionException("Frame processing pool is closed");
+        }
+
         Future<PreparedFrame> result = executor.submit(() -> {
             try {
                 return workers.get().process(frame, info, generation);
@@ -65,19 +88,17 @@ public class FrameProcessingPool implements AutoCloseable {
             }
         });
 
-        // Record the future now, rather than when processing finishes.
-        // Synchronization prevents another submission or poll from racing with this submit and queue operation.
+        // Completion does not free space; the future stays queued until polled.
         results.add(result);
     }
 
     /**
-     * Retrieves the queue head only when its task has finished.
-     * An unfinished head remains queued, preventing later frames overtaking it.
+     * Retrieves the oldest result when ready, freeing one queue slot.
      * Does not wait for processing, but may wait to acquire the pool monitor.
-     * Failed tasks are removed and their failures propagated.
+     * The model must poll only when its pending presentation slot is empty.
      *
-     * @return oldest submitted result, or null if the queue is empty or its head is unfinished
-     * @throws ExecutionException if worker creation or processing failed
+     * @return oldest result, or null if the queue is empty or its head is unfinished
+     * @throws ExecutionException   if worker creation or processing failed
      * @throws InterruptedException if result retrieval is interrupted
      */
     public synchronized PreparedFrame pollReady() throws ExecutionException, InterruptedException {
@@ -93,15 +114,21 @@ public class FrameProcessingPool implements AutoCloseable {
         // The head has finished, so retrieving it cannot wait for unfinished processing.
         // Future.get() also safely publishes the task's result and reports any processing failure.
         results.remove();
+
+        // Wake any sleeping threads that may be waiting for queue space.
+        notifyAll();
         return next.get();
     }
 
     /**
-     * Rejects new submissions and allows accepted tasks to finish.
+     * Rejects new work and wakes submitters waiting for queue space.
+     * Accepted tasks finish normally and their results remain available for polling.
      * Does not cancel tasks or wait for termination.
      */
     @Override
     public synchronized void close() {
+        closed = true;
         executor.shutdown();
+        notifyAll();
     }
 }

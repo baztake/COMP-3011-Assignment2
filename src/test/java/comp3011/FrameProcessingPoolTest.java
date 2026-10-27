@@ -7,12 +7,10 @@ import org.bytedeco.javacv.Frame;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class FrameProcessingPoolTest {
 
@@ -53,7 +51,7 @@ class FrameProcessingPoolTest {
         });
 
         // We define our pool using the mocked worker
-        try (var pool = new FrameProcessingPool(2, () -> worker)) {
+        try (FrameProcessingPool pool = new FrameProcessingPool(2, 2, () -> worker)) {
             // Act
             // We submit our two frames to the pool, the second frame is already processing
             pool.submit(firstInput, firstInfo, 0);
@@ -89,6 +87,111 @@ class FrameProcessingPoolTest {
         } finally {
             // Release the worker even when the test fails or times out.
             releaseFirst.countDown();
+        }
+    }
+
+    /**
+     * Checks that submission waits while the result queue is full.
+     */
+    @Test
+    @Timeout(5)
+    void shouldWaitWhenQueueIsFull() throws Exception {
+        // Assemble
+        FrameProcessingWorker worker = mock(FrameProcessingWorker.class);
+        Frame firstInput = mock(Frame.class);
+        Frame secondInput = mock(Frame.class);
+        InfoFrame info = new InfoFrame(1, 0);
+
+        // Mocking the frame processing
+        when(worker.process(firstInput, info, 0)).thenReturn(new PreparedFrame(null, info, 0));
+
+        // Create new pool with max queue size of 1
+        try (FrameProcessingPool pool = new FrameProcessingPool(1, 1, () -> worker)) {
+            // Submit first frame
+            pool.submit(firstInput, info, 0);
+
+            // Thread with task to submit second frame
+            FutureTask<Void> submission = new FutureTask<>(() -> {
+                pool.submit(secondInput, info, 0);
+                return null;
+            });
+            Thread producer = new Thread(submission);
+
+            try {
+                // Act
+                producer.start();
+                Thread.State state;
+
+                // Wait for producer thread to enter waiting state
+                // Test has a timeout in case it doesn't
+                do {
+                    Thread.sleep(1);
+                    state = producer.getState();
+                } while (state != Thread.State.WAITING && producer.isAlive());
+
+                // Assert
+                assertThat(state).isEqualTo(Thread.State.WAITING);
+            } finally {
+                pool.close();
+                producer.interrupt();
+                producer.join(1_000);
+            }
+        }
+    }
+
+    /**
+     * Checks that polling frees queue space and wakes a waiting submitter.
+     */
+    @Test
+    @Timeout(5)
+    void shouldWakeWaitingSubmitterWhenPolled() throws Exception {
+        // Assemble
+        FrameProcessingWorker worker = mock(FrameProcessingWorker.class);
+        Frame firstInput = mock(Frame.class);
+        Frame secondInput = mock(Frame.class);
+        InfoFrame info = new InfoFrame(1, 0);
+        PreparedFrame firstResult = new PreparedFrame(null, info, 0);
+
+        when(worker.process(firstInput, info, 0)).thenReturn(firstResult);
+
+        // Create new pool with max queue size of 1
+        try (FrameProcessingPool pool = new FrameProcessingPool(1, 1, () -> worker)) {
+            // Submit first frame, queue is now full
+            pool.submit(firstInput, info, 0);
+
+            // Create new submission task
+            FutureTask<Void> submission = new FutureTask<>(() -> {
+                pool.submit(secondInput, info, 0);
+                return null;
+            });
+            Thread producer = new Thread(submission);
+
+            try {
+                // Act
+                producer.start();
+
+                // Wait for producer to enter waiting state
+                Thread.State state;
+                do {
+                    Thread.sleep(1);
+                    state = producer.getState();
+                } while (state != Thread.State.WAITING && producer.isAlive());
+
+                // Get result from pool
+                PreparedFrame result = awaitResult(pool);
+
+                // Submit frame 2, will fail on timeout if thread is still waiting
+                submission.get(3, TimeUnit.SECONDS);
+
+                // Assert
+                // Assert the thread was waiting, first result was returned
+                assertThat(state).isEqualTo(Thread.State.WAITING);
+                assertThat(result).isSameAs(firstResult);
+            } finally {
+                pool.close();
+                producer.interrupt();
+                producer.join(1_000);
+            }
         }
     }
 
