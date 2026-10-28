@@ -252,3 +252,4 @@ The final checks will include `mvn verify` and manual playback testing.
 - Added a test to verify that requestStop cancels queued work and releases accepted input frames, and that
   awaitTermination confirms the workers have stopped.
 - Updated the planning notes to match the implemented queue limit, shutdown methods, and frame-input ownership.
+- Defined dependency versions, fixed logging
