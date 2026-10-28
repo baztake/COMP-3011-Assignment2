@@ -186,10 +186,6 @@ After close or requestStop has returned, a lifecycle thread can call awaitTermin
 must not wait for termination. A cancelled future does not establish that its worker has exited or input clean-up has
 finished.
 
-PlaybackSession configures bounded pools using the selected effects. Each processing thread creates its own initialised
-worker on first use through the pool’s ThreadLocal factory. Processor initialisation failures are reported through the
-submitted frame’s future.
-
 #### Testing and Performance
 
 Correctness will be checked before comparing performance.
@@ -268,6 +264,13 @@ The final checks will include `mvn verify` and manual playback testing.
   path until session integration replaces it.
 - Connected PlaybackSession worker creation to FrameProcessingPool. Each processing thread creates its own initialised
   processor chain on first use.
-- Updated the session test to process a frame through the pool, checking the selected effect, frame information and
+- Updated the session test to process a frame through the pool, checking the selected effect, frame information, and
   playback generation.
 - Next, I will connect the decoder to the pool, copying decoded frames before submission.
+- Added VideoDecoder to separate video decoding from the session and frame processing. It owns opening,
+  seeking, reading, and closing the grabber on one thread.
+- Video metadata comes from the first decoded frame, which is also returned for processing. Documented borrowed frame
+  ownership and captured frame numbers and timestamps in immutable snapshots.
+- Added a basic test covering configuration, seeking, first-frame metadata, end of video, and grabber cleanup.
+- Next, I will run the decoder on a session-owned thread and submit copied frames to the bounded pool, including cleanup
+  when submission is interrupted or rejected.
