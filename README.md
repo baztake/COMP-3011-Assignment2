@@ -259,3 +259,7 @@ The final checks will include `mvn verify` and manual playback testing.
 - Connected PlaybackClock to the model's frame scheduling, pause/resume and audio timing, removing the duplicated timing
   fields and resume calculation. Logical seek positions remain owned by the model.
 - Added an explicit paused-preview flag so seeking while paused displays one frame without resuming playback.
+- Replaced the model's private PreparedFrame with the shared result record used by processing workers. Preparation
+  timestamps are supplied explicitly by producers.
+- Logical seek positions and saved preparation headroom remain model-owned, keeping playback responsibilities separate
+  from frame processing. Updated existing pool test fixtures for the shared record.

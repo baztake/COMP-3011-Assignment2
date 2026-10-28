@@ -32,8 +32,8 @@ class FrameProcessingPoolTest {
         InfoFrame firstInfo = new InfoFrame(1, 0);
         InfoFrame secondInfo = new InfoFrame(2, 0);
 
-        PreparedFrame firstResult = new PreparedFrame(null, firstInfo, 0);
-        PreparedFrame secondResult = new PreparedFrame(null, secondInfo, 0);
+        PreparedFrame firstResult = new PreparedFrame(null, firstInfo, 0, 0L);
+        PreparedFrame secondResult = new PreparedFrame(null, secondInfo, 0, 0L);
 
         CountDownLatch releaseFirst = new CountDownLatch(1);
         CountDownLatch secondProcessed = new CountDownLatch(1);
@@ -103,7 +103,7 @@ class FrameProcessingPoolTest {
         InfoFrame info = new InfoFrame(1, 0);
 
         // Mocking the frame processing
-        when(worker.process(firstInput, info, 0)).thenReturn(new PreparedFrame(null, info, 0));
+        when(worker.process(firstInput, info, 0)).thenReturn(new PreparedFrame(null, info, 0, 0L));
 
         // Create new pool with max queue size of 1
         try (FrameProcessingPool pool = new FrameProcessingPool(1, 1, () -> worker)) {
@@ -150,7 +150,7 @@ class FrameProcessingPoolTest {
         Frame firstInput = mock(Frame.class);
         Frame secondInput = mock(Frame.class);
         InfoFrame info = new InfoFrame(1, 0);
-        PreparedFrame firstResult = new PreparedFrame(null, info, 0);
+        PreparedFrame firstResult = new PreparedFrame(null, info, 0, 0L);
 
         when(worker.process(firstInput, info, 0)).thenReturn(firstResult);
 
@@ -217,7 +217,7 @@ class FrameProcessingPoolTest {
         when(worker.process(runningInput, info, 0)).thenAnswer(_ -> {
             started.countDown();
             release.await();
-            return new PreparedFrame(null, info, 0);
+            return new PreparedFrame(null, info, 0, 0L);
         });
 
         // Create a pool with one worker so the second frame stays queued

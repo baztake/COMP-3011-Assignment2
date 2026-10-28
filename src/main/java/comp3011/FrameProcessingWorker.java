@@ -51,7 +51,12 @@ public class FrameProcessingWorker {
         throwIfInterrupted();
 
         Image image = converter.convert(frame);
-        return new PreparedFrame(image, info, generation);
+        return new PreparedFrame(
+            image,
+            info,
+            generation,
+            System.nanoTime()
+        );
     }
 
     /**

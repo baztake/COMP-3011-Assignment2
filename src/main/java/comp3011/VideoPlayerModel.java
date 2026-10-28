@@ -38,7 +38,7 @@ import java.util.function.Consumer;
 public class VideoPlayerModel {
     private static final long NO_SEEK_REQUEST = -1; // Sentinel value used when no seek position is active.
     private static final long FIVE_SECONDS_US = 5_000_000L;
-    private static final long AUDIO_LEAD_NS = 0L;
+    private static final long AUDIO_LEAD_NS = 30_000_000L;
 
     private final List<FrameProcessor> frameProcessors;
     private final Queue<PendingAudio> pendingAudio = new ArrayDeque<>();
@@ -78,6 +78,7 @@ public class VideoPlayerModel {
     private long currentTimestampUs;
     private long videoDurationUs = NO_SEEK_REQUEST;
     private int videoFrameDurationUs;
+    private long preparedFrameHeadroomUs;
     private double frameRate;
     private int intFrameRate;
     private int totalVideoFrames;
@@ -358,21 +359,14 @@ public class VideoPlayerModel {
             processFrame(frame, info);
 
             Image image = converter.convert(frame);
-            long relativeTimestampUs = playbackClock.relativeTimestampUs(timestampUs);
-            long logicalTimestampUs = logicalPlaybackBaseUs + relativeTimestampUs;
 
-            long preparedAtNs = System.nanoTime();
-            // Capture preparation headroom now so later pauses cannot inflate it.
-            long preparationHeadroomUs = (playbackClock.targetTimeNs(timestampUs) - preparedAtNs) / 1_000L;
+            // The current single-threaded path has no session generations yet.
+            PreparedFrame result = new PreparedFrame(image, info, 0L, System.nanoTime());
 
-            return new PreparedFrame(
-                image,
-                frameNumber,
-                timestampUs,
-                logicalTimestampUs,
-                preparationHeadroomUs,
-                preparedAtNs
-            );
+            // Capture headroom now so later pauses cannot inflate the measurement.
+            preparedFrameHeadroomUs = (playbackClock.targetTimeNs(timestampUs) - result.preparedAtNs()) / 1_000L;
+
+            return result;
         }
 
         return null;
@@ -399,9 +393,8 @@ public class VideoPlayerModel {
         writeDueAudio(now);
 
         // Task (2)
-        if (preparedFrame != null && (previewRequested || playbackClock.isDue(preparedFrame.mediaTimestampUs(), now))) {
-            // We have a prepared frame ready to go and it is due (or just past due!) so get it up on screen ASAP!
-            displayPreparedFrame(now);
+        if (preparedFrame != null && (previewRequested || playbackClock.isDue(preparedFrame.info().timestampUs(), now))) {
+            displayPreparedFrame();
         }
 
         // Task (3). We'll try and be nice to the GUI event loop here by queueing the prepareNextFrame call rather than
@@ -423,19 +416,17 @@ public class VideoPlayerModel {
 
     /**
      * Presents the pending image and reports its saved preparation headroom.
-     *
-     * @param now monotonic JavaFX pulse time in nanoseconds
      */
-    private void displayPreparedFrame(long now) {
+    private void displayPreparedFrame() {
         PreparedFrame frame = preparedFrame;
         preparedFrame = null;
         previewRequested = false;
-        currentTimestampUs = frame.logicalTimestampUs();
+        currentTimestampUs = logicalPlaybackBaseUs + playbackClock.relativeTimestampUs(frame.info().timestampUs());
         relativeSeekBaseUs = NO_SEEK_REQUEST;
 
         // Dump some logging to the console once per second so that real time performance can be monitored.
-        if (intFrameRate > 0 && frame.frameNumber() % intFrameRate == 0) {
-            long remainingUs = frame.preparationHeadroomUs();
+        if (intFrameRate > 0 && frame.info().frameNumber() % intFrameRate == 0) {
+            long remainingUs = preparedFrameHeadroomUs;
             if (remainingUs < 0) {
                 System.out.printf("Frame headroom is \u001B[31m%5dus\u001B[0m out of %dus spare.%n",
                     remainingUs,
@@ -630,25 +621,6 @@ public class VideoPlayerModel {
 
     private void notifyAudioOutputStateChanged() {
         audioOutputStateChangedHandler.accept(audioOutputEnabled);
-    }
-
-    /**
-     * Holds a prepared image without a cached presentation deadline.
-     *
-     * @param image                 processed display image
-     * @param frameNumber           decoded frame number
-     * @param mediaTimestampUs      original media timestamp in microseconds
-     * @param logicalTimestampUs    logical seek-relative position in microseconds
-     * @param preparationHeadroomUs deadline minus preparation time, captured during preparation
-     * @param preparedAtNs          monotonic preparation completion time in nanoseconds
-     */
-    private record PreparedFrame(
-        Image image,
-        int frameNumber,
-        long mediaTimestampUs,
-        long logicalTimestampUs,
-        long preparationHeadroomUs,
-        long preparedAtNs) {
     }
 
     private static class PendingAudio {
