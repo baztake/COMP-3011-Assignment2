@@ -27,13 +27,11 @@ import java.util.function.Consumer;
 /**
  * The model part of the video player model-view-controller architecture.
  *
- * <p>
  * Owns the FFmpeg decoder, playback clock, seeking logic, audio scheduling,
  * and frame processing - which it all manages through cooperative multi-tasking
  * on a single thread. It publishes decoded frames and playback state through
  * callbacks supplied by its owning {@link VideoPlayerController}, keeping it
  * decoupled from the JavaFX view.
- * </p>
  */
 public class VideoPlayerModel {
     private static final long NO_SEEK_REQUEST = -1; // Sentinel value used when no seek position is active.
@@ -41,6 +39,8 @@ public class VideoPlayerModel {
     private static final long AUDIO_LEAD_NS = 30_000_000L;
 
     private final List<FrameProcessor> frameProcessors;
+    // Conversion scratch state belongs to this single-threaded model, not the audio device.
+    private final AudioSampleCopier audioSampleCopier = new AudioSampleCopier();
     private final Queue<PendingAudio> pendingAudio = new ArrayDeque<>();
     private final BiConsumer<Integer, Integer> videoSizeChangedHandler;
     private final Consumer<Image> frameReadyHandler;
@@ -446,7 +446,7 @@ public class VideoPlayerModel {
             return;
         }
 
-        byte[] samples = audioPlayer.copySamples(frame);
+        byte[] samples = audioSampleCopier.copySamples(frame);
         if (samples.length > 0) {
             pendingAudio.add(new PendingAudio(timestampUs, samples));
         }

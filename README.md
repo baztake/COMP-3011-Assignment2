@@ -286,3 +286,6 @@ The final checks will include `mvn verify` and manual playback testing.
   pool submission stay outside the critical region. Already admitted work may finish after pausing.
 - Updated session startup calls and added a focused test checking one paused preview, admission waiting and resume.
 - Next, I will separate audio sample copying from audio-device access before adding the audio thread.
+- Extracted audio sample conversion into AudioSampleCopier, separating it from AudioPlayer's device access.
+- Documented that each decoder must own its copier and the audio-output thread must own device access.
+- Next, I will add audio output ownership on a dedicated thread with a bounded queue of copied, timestamped PCM packets.
