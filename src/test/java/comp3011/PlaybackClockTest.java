@@ -16,8 +16,7 @@ class PlaybackClockTest {
     @Test
     void shouldFreezeMediaTimeAndShiftDeadlineWhenPaused() {
         // Assemble
-        PlaybackClock clock =
-                new PlaybackClock(5_000_000L, 1_000_000_000L);
+        PlaybackClock clock = new PlaybackClock(5_000_000L, 1_000_000_000L);
         long frameTimestampUs = 5_040_000L;
 
         // Act
@@ -27,8 +26,7 @@ class PlaybackClockTest {
         clock.setPaused(true, 1_020_000_000L);
         clock.setPaused(true, 1_030_000_000L);
         long pausedMediaTime = clock.mediaTimestampUs(2_000_000_000L);
-        boolean dueWhilePaused =
-                clock.isDue(frameTimestampUs, 2_000_000_000L);
+        boolean dueWhilePaused = clock.isDue(frameTimestampUs, 2_000_000_000L);
 
         // Resume after a one-second pause.
         // Repeating either state must not change the timing again.
@@ -36,10 +34,8 @@ class PlaybackClockTest {
         clock.setPaused(false, 2_025_000_000L);
         long resumedDeadline = clock.targetTimeNs(frameTimestampUs);
         long resumedMediaTime = clock.mediaTimestampUs(2_030_000_000L);
-        boolean dueBeforeDeadline =
-                clock.isDue(frameTimestampUs, 2_039_999_999L);
-        boolean dueAtDeadline =
-                clock.isDue(frameTimestampUs, 2_040_000_000L);
+        boolean dueBeforeDeadline = clock.isDue(frameTimestampUs, 2_039_999_999L);
+        boolean dueAtDeadline = clock.isDue(frameTimestampUs, 2_040_000_000L);
 
         // Assert
         assertThat(originalDeadline).isEqualTo(1_040_000_000L);
@@ -50,4 +46,27 @@ class PlaybackClockTest {
         assertThat(dueBeforeDeadline).isFalse();
         assertThat(dueAtDeadline).isTrue();
     }
+
+    /**
+     * Checks that resetting startup establishes a paused origin and shifts it on resume.
+     */
+    @Test
+    void shouldResetPausedStartupOrigin() {
+        // Assemble
+        PlaybackClock clock = new PlaybackClock(0, 1_000_000L);
+
+        // Act
+        clock.reset(100L, 2_000_000L, true);
+        long pausedTime = clock.mediaTimestampUs(3_000_000L);
+        boolean dueWhilePaused = clock.isDue(100L, 3_000_000L);
+        clock.setPaused(false, 4_000_000L);
+        long deadline = clock.targetTimeNs(200L);
+
+        // Assert
+        assertThat(pausedTime).isEqualTo(100L);
+        assertThat(dueWhilePaused).isFalse();
+        assertThat(deadline).isEqualTo(4_100_000L);
+        assertThat(clock.relativeTimestampUs(200L)).isEqualTo(100L);
+    }
+
 }

@@ -17,9 +17,10 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Runs one video-only decoding session with bounded parallel frame processing.
- * The decoder thread owns native decoding and copies frames before submission.
- * Volatile fields publish metadata, pool access and decoder status to other threads.
+ * Runs a decoding session with bounded parallel frame processing.
+ * An optional independent audio path shares the session playback clock.
+ * Decoder threads own their native resources and copy frames before submission.
+ * Volatile fields publish metadata, pool access and startup status to other threads.
  * Synchronised startup and stopping prevent publication of a pool after cancellation.
  * Admission waits release the monitor; resume and stop wake the decoder.
  */
@@ -35,27 +36,39 @@ public class PlaybackSession {
 
     private volatile boolean stopRequested;
     private volatile FrameProcessingPool pool;
+    // Registered before submission, even while the first frame is not yet visible.
+    private volatile FrameProcessingPool ownedPool;
+    private volatile AudioPreparation audioPreparation;
+
     /**
      * -- GETTER --
-     *  Returns safely published metadata from the first decoded video frame.
+     *
+     * @return shared audio/video clock, or null for the existing video-only path
+     */
+    @Getter
+    private volatile PlaybackClock playbackClock;
+
+    /**
+     * -- GETTER --
+     *
+     * @return true when the shared clock has been initialized after startup
+     */
+    @Getter
+    private volatile boolean startupReady;
+    /**
+     * -- GETTER --
+     * Returns safely published metadata from the first decoded video frame.
      *
      * @return immutable video metadata, or null before publication
      */
     @Getter
     private volatile InfoVideo videoInfo;
-    /**
-     * -- GETTER --
-     *  Returns an unexpected decoder, startup or close failure.
-     *  Worker failures are reported separately by pollReady.
-     *
-     * @return decoder failure, or null if no unexpected failure has been recorded
-     */
-    @Getter
+    // Published decoder or startup failure; audio output reports its own failure.
     private volatile Throwable failure;
     /**
      * -- GETTER --
-     *  Reports decoder exit after EOF, stopping or failure.
-     *  Does not establish worker termination or consumption of all results.
+     * Reports decoder exit after EOF, stopping or failure.
+     * Does not establish worker termination or consumption of all results.
      *
      * @return true once decoder cleanup and pool shutdown have been attempted
      */
@@ -73,19 +86,83 @@ public class PlaybackSession {
     }
 
     /**
+     * Starts independent audio and video preparation with one shared clock.
+     * The audio preparation must own an unstarted output and use its shared clock.
+     * The clock remains paused until the first video result and audio startup are ready.
+     * After argument validation, the session owns the audio preparation even if startup fails.
+     * If partial startup fails, accepted audio work is stopped; unaccepted decoders remain caller-owned.
+     *
+     * @param decoder          unstarted video decoder
+     * @param audioDecoder     unstarted audio decoder
+     * @param audio            unstarted audio preparation and its output
+     * @param startTimestampUs starting media position in microseconds
+     * @param initiallyPaused  whether to prepare one preview and remain paused
+     * @param workerCount      number of processing threads
+     * @param maxQueuedFrames  maximum accepted, unpolled video frames
+     * @param generation       playback generation associated with video frames
+     * @throws NullPointerException     if a decoder or audio preparation is null
+     * @throws IllegalArgumentException if the timestamp or processing limits are invalid
+     * @throws IllegalStateException    if this session has already started or stopped
+     */
+    public synchronized void startWithAudio(
+        @NonNull VideoDecoder decoder,
+        @NonNull AudioDecoder audioDecoder,
+        @NonNull AudioPreparation audio,
+        long startTimestampUs,
+        boolean initiallyPaused,
+        int workerCount,
+        int maxQueuedFrames,
+        long generation
+    ) {
+        if (startTimestampUs < 0 || workerCount <= 0 || maxQueuedFrames <= 0) {
+            throw new IllegalArgumentException("Invalid session timestamp or processing limits");
+        }
+        if (decoderThread != null || stopRequested) {
+            throw new IllegalStateException("Playback session cannot be started again");
+        }
+
+        PlaybackClock clock = audio.playbackClock();
+        clock.setPaused(true, System.nanoTime());
+        playbackClock = clock;
+        audioPreparation = audio;
+        try {
+            audio.start(audioDecoder, startTimestampUs);
+            start(decoder, startTimestampUs, initiallyPaused, workerCount, maxQueuedFrames, generation);
+        } catch (RuntimeException | Error failed) {
+            stopRequested = true;
+            audio.requestStop();
+            throw failed;
+        }
+    }
+
+    /**
+     * Returns a video or audio preparation failure, if one occurred.
+     * Worker failures are reported by pollReady or during startup.
+     * The caller must check regularly, including while paused or holding a pending frame.
+     * On failure, request stop and wait for termination off JavaFX.
+     *
+     * @return recorded failure, or null when neither path has failed
+     */
+    public Throwable getFailure() {
+        Throwable videoFailure = failure;
+        AudioPreparation audio = audioPreparation;
+        return videoFailure != null || audio == null ? videoFailure : audio.getFailure();
+    }
+
+    /**
      * Starts this session once and transfers decoder ownership on successful startup.
      * Invalid or rejected startup leaves the decoder owned by the caller.
      * All decoder operations run on the new thread, including cleanup.
      *
-     * @param decoder unstarted decoder transferred to this session
+     * @param decoder          unstarted decoder transferred to this session
      * @param startTimestampUs starting media position in microseconds
-     * @param initiallyPaused whether to admit one preview and then wait for resume
-     * @param workerCount number of processing threads
-     * @param maxQueuedFrames maximum number of accepted, unpolled frames
-     * @param generation playback generation attached to submitted frames
-     * @throws NullPointerException if decoder is null
+     * @param initiallyPaused  whether to admit one preview and then wait for resume
+     * @param workerCount      number of processing threads
+     * @param maxQueuedFrames  maximum number of accepted, unpolled frames
+     * @param generation       playback generation attached to submitted frames
+     * @throws NullPointerException     if decoder is null
      * @throws IllegalArgumentException if the timestamp is negative or either limit is not positive
-     * @throws IllegalStateException if this session has already started or been stopped
+     * @throws IllegalStateException    if this session has already started or been stopped
      */
     public synchronized void start(
         @NonNull VideoDecoder decoder,
@@ -118,11 +195,11 @@ public class PlaybackSession {
      * Opens the decoder, publishes its pool and submits copied video frames.
      * EOF closes the pool gracefully; stopping or failure cancels outstanding work.
      *
-     * @param decoder decoder owned and closed by this thread
+     * @param decoder          decoder owned and closed by this thread
      * @param startTimestampUs starting media position in microseconds
-     * @param workerCount number of processing threads
-     * @param maxQueuedFrames maximum number of accepted, unpolled frames
-     * @param generation playback generation attached to submitted frames
+     * @param workerCount      number of processing threads
+     * @param maxQueuedFrames  maximum number of accepted, unpolled frames
+     * @param generation       playback generation attached to submitted frames
      */
     private void decodeVideo(
         VideoDecoder decoder,
@@ -144,11 +221,27 @@ public class PlaybackSession {
 
             VideoDecoder.DecodedFrame decoded = readNextFrame(decoder);
             if (decoded == null || stopRequested) {
+                if (decoded == null && !stopRequested && audioPreparation != null) {
+                    failure = new IllegalStateException("Media contains no video frame");
+                }
                 return;
             }
 
             InfoVideo metadata = decoder.videoInfo();
             processingPool = createPool(workerCount, maxQueuedFrames, metadata);
+            synchronized (this) {
+                // Stop and termination must see workers before any task can start.
+                if (stopRequested) return;
+                ownedPool = processingPool;
+            }
+
+            AudioPreparation audio = audioPreparation;
+            if (audio != null) {
+                // Prepare the first video frame before publishing the pool.
+                // A preview may then be polled while audio startup continues.
+                submitFrame(processingPool, decoded, generation);
+                processingPool.awaitFirstResult();
+            }
 
             synchronized (this) {
                 // Stop and publication use the same monitor, so a stopped session
@@ -160,24 +253,19 @@ public class PlaybackSession {
                 pool = processingPool;
             }
 
+            if (audio != null) {
+                if (!awaitAudioStartup(audio, decoded.info().timestampUs())) {
+                    return;
+                }
+                decoded = readNextFrame(decoder);
+            }
+
             while (decoded != null && !stopRequested) {
                 if (Thread.currentThread().isInterrupted()) {
                     throw new InterruptedException("Video decoding interrupted");
                 }
 
-                // The next read may reuse decoder memory, so submit an independent copy.
-                Frame copy = decoded.frame().clone();
-                boolean accepted = false;
-                try {
-                    processingPool.submit(copy, decoded.info(), generation);
-                    accepted = true;
-                } finally {
-                    // Rejected or interrupted submission leaves ownership here.
-                    // Accepted inputs are closed exclusively by the pool.
-                    if (!accepted) {
-                        copy.close();
-                    }
-                }
+                submitFrame(processingPool, decoded, generation);
 
                 if (stopRequested) {
                     break;
@@ -195,6 +283,10 @@ public class PlaybackSession {
         } catch (Exception | LinkageError failed) {
             failure = failed;
         } finally {
+            AudioPreparation audio = audioPreparation;
+            if (audio != null && (stopRequested || failure != null)) {
+                audio.requestStop();
+            }
             if (processingPool != null) {
                 if (stopRequested || failure != null) {
                     processingPool.requestStop();
@@ -208,12 +300,76 @@ public class PlaybackSession {
     }
 
     /**
+     * Copies and submits one borrowed video frame.
+     * The pool owns accepted copies; the decoder closes a rejected copy.
+     *
+     * @param processingPool bounded pool receiving the frame
+     * @param decoded        borrowed decoded frame and its information
+     * @param generation     playback generation associated with the frame
+     * @throws InterruptedException       if interrupted while waiting for capacity
+     * @throws RejectedExecutionException if the pool is closed
+     */
+    private void submitFrame(FrameProcessingPool processingPool, VideoDecoder.DecodedFrame decoded, long generation)
+        throws InterruptedException {
+        Frame copy = decoded.frame().clone();
+        boolean accepted = false;
+        try {
+            processingPool.submit(copy, decoded.info(), generation);
+            accepted = true;
+        } finally {
+            if (!accepted) {
+                copy.close();
+            }
+        }
+    }
+
+    /**
+     * Waits for audio readiness before initializing the shared clock.
+     * A preview may already be available while this method waits.
+     *
+     * @param audio            audio preparation owned by this session
+     * @param videoTimestampUs timestamp of the first prepared video frame
+     * @return false if stopping was requested
+     * @throws InterruptedException if interrupted while waiting
+     */
+    private boolean awaitAudioStartup(AudioPreparation audio, long videoTimestampUs) throws InterruptedException {
+        while (!stopRequested) {
+            Throwable audioFailure = audio.getFailure();
+            if (audioFailure != null) {
+                throw new IllegalStateException("Audio startup failed", audioFailure);
+            }
+
+            boolean hasPacket = audio.isFirstPacketQueued();
+            boolean audioReady = audio.isProbeComplete() && (
+                !audio.isAudioAvailable()
+                    || (hasPacket && audio.isOutputReady())
+                    || (!hasPacket && audio.isDecoderFinished()
+                    && audio.awaitTermination(0, TimeUnit.NANOSECONDS))
+            );
+            if (audioReady) {
+                long firstTimestampUs = hasPacket ? Math.min(videoTimestampUs, audio.getFirstAudioTimestampUs()) : videoTimestampUs;
+                synchronized (this) {
+                    if (stopRequested) return false;
+                    playbackClock.reset(firstTimestampUs, System.nanoTime(), paused);
+                    startupReady = true;
+                    return true;
+                }
+            }
+
+            synchronized (this) {
+                if (!stopRequested) wait(5);
+            }
+        }
+        return false;
+    }
+
+    /**
      * Waits for admission before reading the next video frame.
      * Already admitted reads may finish after a pause request.
      *
      * @param decoder decoder owned by the current thread
      * @return borrowed decoded frame, or null on stopping or end of video
-     * @throws InterruptedException if interrupted while waiting for admission
+     * @throws InterruptedException   if interrupted while waiting for admission
      * @throws FrameGrabber.Exception if decoding fails
      */
     private VideoDecoder.DecodedFrame readNextFrame(VideoDecoder decoder)
@@ -237,12 +393,17 @@ public class PlaybackSession {
     /**
      * Changes admission of future decoder reads without waiting for in-flight work.
      * Ordinary pausing grants no preview; resuming wakes the decoder.
-     * Presentation timing and audio must be controlled separately.
+     * Before startup finishes, only the desired pause state changes.
+     * After startup, the shared clock controls audio scheduling and presentation timing.
+     * An admitted write and device-buffered audio may continue after pausing.
      *
      * @param paused whether future reads should wait
      */
     public synchronized void setPaused(boolean paused) {
         this.paused = paused;
+        if (startupReady && playbackClock != null) {
+            playbackClock.setPaused(paused, System.nanoTime());
+        }
         if (!paused) {
             // An early resume must not leave a preview permission for a later pause.
             previewPending = false;
@@ -255,7 +416,7 @@ public class PlaybackSession {
      * Poll only when the caller's single pending presentation slot is empty.
      *
      * @return oldest ready result, or null before startup or while no head is ready
-     * @throws ExecutionException if worker creation or processing failed
+     * @throws ExecutionException   if worker creation or processing failed
      * @throws InterruptedException if result retrieval is interrupted
      */
     public PreparedFrame pollReady() throws ExecutionException, InterruptedException {
@@ -271,25 +432,28 @@ public class PlaybackSession {
     public synchronized void requestStop() {
         stopRequested = true;
         notifyAll();
+        if (audioPreparation != null) {
+            audioPreparation.requestStop();
+        }
         if (decoderThread != null) {
             decoderThread.interrupt();
         }
-        if (pool != null) {
-            pool.requestStop();
+        if (ownedPool != null) {
+            ownedPool.requestStop();
         }
     }
 
     /**
-     * Waits for decoder and worker exit using one shared timeout budget.
+     * Waits for video, processing workers and audio owners using one shared timeout budget.
      * Call from a lifecycle thread, never JavaFX or a session worker.
      * Does not request stopping; graceful completion requires polling and resume if paused.
      *
      * @param timeout combined termination waiting time; nonpositive values only check status
-     * @param unit unit of the timeout
-     * @return true if decoder and workers have exited, otherwise false on timeout
-     * @throws NullPointerException if unit is null
+     * @param unit    unit of the timeout
+     * @return true if all started owners have exited, otherwise false on timeout
+     * @throws NullPointerException  if unit is null
      * @throws IllegalStateException if called by the decoder thread
-     * @throws InterruptedException if the waiting thread is interrupted
+     * @throws InterruptedException  if the waiting thread is interrupted
      */
     public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
         long timeoutNs = Math.max(0L, unit.toNanos(timeout));
@@ -299,7 +463,9 @@ public class PlaybackSession {
             thread = decoderThread;
         }
         if (thread == null) {
-            return true;
+            AudioPreparation audio = audioPreparation;
+            long remainingNs = Math.max(0L, timeoutNs - (System.nanoTime() - startedNs));
+            return audio == null || audio.awaitTermination(remainingNs, TimeUnit.NANOSECONDS);
         }
         if (thread == Thread.currentThread()) {
             throw new IllegalStateException("Decoder cannot wait for its own termination");
@@ -317,10 +483,15 @@ public class PlaybackSession {
             }
         }
 
-        FrameProcessingPool processingPool = pool;
+        FrameProcessingPool processingPool = ownedPool;
         remainingNs = Math.max(0L, timeoutNs - (System.nanoTime() - startedNs));
-        return processingPool == null
-            || processingPool.awaitTermination(remainingNs, TimeUnit.NANOSECONDS);
+        if (processingPool != null && !processingPool.awaitTermination(remainingNs, TimeUnit.NANOSECONDS)) {
+            return false;
+        }
+
+        AudioPreparation audio = audioPreparation;
+        remainingNs = Math.max(0L, timeoutNs - (System.nanoTime() - startedNs));
+        return audio == null || audio.awaitTermination(remainingNs, TimeUnit.NANOSECONDS);
     }
 
     /**

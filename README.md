@@ -300,4 +300,8 @@ The final checks will include `mvn verify` and manual playback testing.
   closing, while requestStop continues to discard queued work.
 - Added a test for writing, draining, closing, and rejecting submissions after input finishes.
 - Next, coordinate audio and video startup and bounded queues before connecting the session to the player.
-- Added an independent AudioDecoder that reads audio samples, copies them before the next grab and preserves timestamps.
+- Added an independent AudioDecoder that reads audio samples, copies them before the next grab, and preserves timestamps.
+- Connected audio preparation to PlaybackSession with shared clock.
+- Coordinated cancellation and termination across video, workers, and audio, and exposed audio failures through the session.
+- Registered the video pool for lifecycle handling before its first submission.
+- Next, integrate session lifecycle, playback controls, and audio output with the model while retaining both playback modes.

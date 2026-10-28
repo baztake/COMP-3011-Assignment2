@@ -10,7 +10,7 @@ package comp3011;
  * Synchronised methods protect timing shared by presentation and audio.
  */
 public class PlaybackClock {
-    private final long firstTimestampUs;
+    private long firstTimestampUs;
     private long playbackStartNs;
     private long pauseStartedNs;
     private boolean paused;
@@ -24,6 +24,20 @@ public class PlaybackClock {
     public PlaybackClock(long firstTimestampUs, long playbackStartNs) {
         this.firstTimestampUs = firstTimestampUs;
         this.playbackStartNs = playbackStartNs;
+    }
+
+    /**
+     * Resets the media origin before starting a newly prepared session.
+     *
+     * @param firstTimestampUs first media timestamp in microseconds
+     * @param nowNs monotonic startup time in nanoseconds
+     * @param paused whether playback should remain paused
+     */
+    synchronized void reset(long firstTimestampUs, long nowNs, boolean paused) {
+        this.firstTimestampUs = firstTimestampUs;
+        this.playbackStartNs = nowNs;
+        this.pauseStartedNs = nowNs;
+        this.paused = paused;
     }
 
     /**
@@ -88,7 +102,7 @@ public class PlaybackClock {
      * @param timestampUs media timestamp in microseconds
      * @return elapsed media time in microseconds, clamped to zero
      */
-    public long relativeTimestampUs(long timestampUs) {
+    public synchronized long relativeTimestampUs(long timestampUs) {
         return Math.max(0, timestampUs - firstTimestampUs);
     }
 }

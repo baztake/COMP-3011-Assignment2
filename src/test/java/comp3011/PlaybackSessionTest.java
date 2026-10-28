@@ -204,6 +204,114 @@ class PlaybackSessionTest {
     }
 
     /**
+     * Checks that the session starts audio preparation and prepares the first video frame.
+     * The shared clock uses the first audio timestamp when it comes before video.
+     *
+     * @throws Exception if processing or test coordination fails
+     */
+    @Test
+    @Timeout(10)
+    void shouldPrepareAudioAndVideo() throws Exception {
+        // Assemble
+        PlaybackSession session = new PlaybackSession(List.of());
+        VideoDecoder video = mock(VideoDecoder.class);
+        AudioDecoder audioDecoder = mock(AudioDecoder.class);
+        AudioOutput output = mock(AudioOutput.class);
+        PlaybackClock clock = new PlaybackClock(0, System.nanoTime());
+        AudioPreparation audio = new AudioPreparation(output);
+        byte[] samples = {1, 2};
+
+        // Mocking one audio packet and a ready audio output.
+        when(output.playbackClock()).thenReturn(clock);
+        when(output.isReady()).thenReturn(true);
+        when(output.awaitTermination(anyLong(), any(TimeUnit.class))).thenReturn(true);
+        when(audioDecoder.hasAudio()).thenReturn(true);
+        when(audioDecoder.sampleRate()).thenReturn(48_000);
+        when(audioDecoder.channels()).thenReturn(1);
+        when(audioDecoder.read()).thenReturn(new AudioDecoder.DecodedAudio(100, samples)).thenReturn(null);
+        when(video.videoInfo()).thenReturn(mock(InfoVideo.class));
+
+        try (Frame input = new Frame(1, 1, Frame.DEPTH_UBYTE, 3)) {
+            // Mocking one video frame, followed by end of video.
+            when(video.read()).thenReturn(new VideoDecoder.DecodedFrame(input, new InfoFrame(1, 200)))
+                .thenReturn(null);
+
+            try {
+                // Act
+                session.startWithAudio(video, audioDecoder, audio, 0, false, 1, 2, 3);
+                PreparedFrame first = awaitResult(session);
+                boolean terminated = session.awaitTermination(3, TimeUnit.SECONDS);
+
+                // Assert
+                // Ensure both streams were prepared and the shared clock kept their offset.
+                assertThat(first.info().timestampUs()).isEqualTo(200);
+                assertThat(session.isStartupReady()).isTrue();
+                assertThat(clock.relativeTimestampUs(100)).isZero();
+                assertThat(clock.relativeTimestampUs(200)).isEqualTo(100);
+                assertThat(terminated).isTrue();
+                assertThat(session.getFailure()).isNull();
+                verify(output).enqueue(100, samples);
+                verify(output).finishInput();
+                verify(audioDecoder).close();
+                verify(video).close();
+            } finally {
+                // Stop all session threads even when the test fails or times out.
+                session.requestStop();
+                session.awaitTermination(3, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    /**
+     * Checks that a paused preview is available while audio startup is still pending.
+     * An early resume must not start the shared clock before audio is ready.
+     *
+     * @throws Exception if processing or test coordination fails
+     */
+    @Test
+    @Timeout(10)
+    void shouldWaitForAudioAfterPausedPreview() throws Exception {
+        // Assemble
+        PlaybackSession session = new PlaybackSession(List.of());
+        VideoDecoder video = mock(VideoDecoder.class);
+        AudioDecoder audioDecoder = mock(AudioDecoder.class);
+        AudioPreparation audio = mock(AudioPreparation.class);
+        PlaybackClock clock = new PlaybackClock(0, System.nanoTime());
+        when(audio.playbackClock()).thenReturn(clock);
+        when(audio.awaitTermination(anyLong(), any(TimeUnit.class))).thenReturn(true);
+        when(video.videoInfo()).thenReturn(mock(InfoVideo.class));
+
+        try (Frame input = new Frame(1, 1, Frame.DEPTH_UBYTE, 3)) {
+            // Audio probing stays pending while the first video frame is prepared.
+            when(video.read()).thenReturn(new VideoDecoder.DecodedFrame(input, new InfoFrame(1, 200)));
+
+            try {
+                // Act
+                session.startWithAudio(video, audioDecoder, audio, 0, true, 1, 2, 3);
+                PreparedFrame preview = awaitResult(session);
+                session.setPaused(false);
+                boolean ready = session.isStartupReady();
+                boolean due = clock.isDue(0, System.nanoTime());
+                session.requestStop();
+                boolean terminated = session.awaitTermination(3, TimeUnit.SECONDS);
+
+                // Assert
+                // Ensure resume did not start playback while audio was still pending.
+                assertThat(preview.info().timestampUs()).isEqualTo(200);
+                assertThat(ready).isFalse();
+                assertThat(due).isFalse();
+                assertThat(terminated).isTrue();
+                verify(audio, atLeastOnce()).requestStop();
+                verify(video).close();
+            } finally {
+                // Stop all session threads even when the test fails or times out.
+                session.requestStop();
+                session.awaitTermination(3, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    /**
      * Waits for the next prepared result within the enclosing test's timeout.
      *
      * @param session session supplying processed frames

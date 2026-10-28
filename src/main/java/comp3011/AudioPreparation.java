@@ -75,6 +75,15 @@ public class AudioPreparation {
     }
 
     /**
+     * Returns the clock shared with audio output.
+     *
+     * @return playback clock used by the output
+     */
+    PlaybackClock playbackClock() {
+        return output.playbackClock();
+    }
+
+    /**
      * Starts audio decoding once and transfers decoder ownership on success.
      * Rejected startup leaves decoder ownership with the caller.
      *

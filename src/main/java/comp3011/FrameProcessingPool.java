@@ -121,6 +121,26 @@ public class FrameProcessingPool implements AutoCloseable {
     }
 
     /**
+     * Waits for the oldest submitted task without removing its result.
+     * Call only from the startup thread before publishing the pool.
+     * The monitor is released while the task runs.
+     *
+     * @throws IllegalStateException if no task has been submitted
+     * @throws ExecutionException    if worker creation or processing failed
+     * @throws InterruptedException  if interrupted while waiting
+     */
+    void awaitFirstResult() throws ExecutionException, InterruptedException {
+        FrameTask first;
+        synchronized (this) {
+            first = results.peek();
+        }
+        if (first == null) {
+            throw new IllegalStateException("No frame has been submitted");
+        }
+        first.get();
+    }
+
+    /**
      * Rejects submissions, cancels accepted work and discards queued results.
      * Running tasks retain their inputs until execution exits.
      * Queued tasks release their inputs without running processors.

@@ -59,6 +59,15 @@ public class AudioOutput {
     }
 
     /**
+     * Returns the clock shared with the session coordinator.
+     *
+     * @return playback clock used by this output
+     */
+    PlaybackClock playbackClock() {
+        return clock;
+    }
+
+    /**
      * Starts the owner thread and transfers the player on successful startup.
      * Rejected startup leaves ownership with the caller.
      *
