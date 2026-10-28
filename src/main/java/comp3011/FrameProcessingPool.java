@@ -51,7 +51,10 @@ public class FrameProcessingPool implements AutoCloseable {
         }
         this.maxQueuedFrames = maxQueuedFrames;
         this.workers = ThreadLocal.withInitial(workerFactory);
-        this.executor = Executors.newFixedThreadPool(workerCount);
+        this.executor = Executors.newFixedThreadPool(
+            workerCount,
+            Thread.ofPlatform().name("frame-worker-", 0).factory()
+        );
     }
 
     /**

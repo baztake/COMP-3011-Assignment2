@@ -274,3 +274,8 @@ The final checks will include `mvn verify` and manual playback testing.
 - Added a basic test covering configuration, seeking, first-frame metadata, end of video, and grabber cleanup.
 - Next, I will run the decoder on a session-owned thread and submit copied frames to the bounded pool, including cleanup
   when submission is interrupted or rejected.
+- Connected VideoDecoder to PlaybackSession on a named decoder thread. Each frame is copied before submission,
+  and interrupted or rejected submissions release their copies.
+- Named processing threads and documented frame ownership, critical regions, and termination behaviour.
+- Updated the session processing test and added a focused full-queue stop test checking copy cleanup and decoder closure.
+- Next, I will add session pause/resume admission control and the paused-preview behaviour before model integration.
