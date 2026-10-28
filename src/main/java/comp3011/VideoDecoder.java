@@ -75,6 +75,43 @@ public class VideoDecoder implements AutoCloseable {
             return null;
         }
 
+        captureVideoInfo(frame);
+
+        // Snapshot before another grab can change the grabber's current position.
+        InfoFrame info = new InfoFrame(grabber.getFrameNumber(), grabber.getTimestamp());
+        return new DecodedFrame(frame, info);
+    }
+
+    /**
+     * Reads the next media frame without copying its buffers.
+     * Frames without image or sample data may also be returned.
+     * Use one read method consistently for a decoder session.
+     *
+     * @return borrowed media frame and its timestamp, or null at end of media
+     * @throws FrameGrabber.Exception if decoding fails
+     */
+    public DecodedMediaFrame readMedia() throws FrameGrabber.Exception {
+        Frame frame = grabber.grab();
+        if (frame == null) {
+            return null;
+        }
+
+        long timestampUs = grabber.getTimestamp();
+        InfoFrame info = null;
+        if (frame.image != null) {
+            captureVideoInfo(frame);
+            info = new InfoFrame(grabber.getFrameNumber(), timestampUs);
+        }
+
+        return new DecodedMediaFrame(frame, timestampUs, info);
+    }
+
+    /**
+     * Captures metadata from the first decoded video frame.
+     *
+     * @param frame decoded video frame with its actual image layout
+     */
+    private void captureVideoInfo(Frame frame) {
         if (videoInfo == null) {
             // Actual decoded layout is needed, particularly depth and stride.
             double frameRate = grabber.getFrameRate();
@@ -90,10 +127,6 @@ public class VideoDecoder implements AutoCloseable {
                 grabber.getPixelFormat()
             );
         }
-
-        // Snapshot before another grab can change the grabber's current position.
-        InfoFrame info = new InfoFrame(grabber.getFrameNumber(), grabber.getTimestamp());
-        return new DecodedFrame(frame, info);
     }
 
     /**
@@ -124,4 +157,16 @@ public class VideoDecoder implements AutoCloseable {
      */
     public record DecodedFrame(Frame frame, InfoFrame info) {
     }
+
+    /**
+     * Pairs a borrowed media frame with its timestamp and optional video information.
+     * Copy samples or image data before the next read or decoder close.
+     *
+     * @param frame       borrowed media frame
+     * @param timestampUs media timestamp in microseconds
+     * @param videoInfo   frame information, or null when the frame has no image
+     */
+    public record DecodedMediaFrame(Frame frame, long timestampUs, InfoFrame videoInfo) {
+    }
+
 }

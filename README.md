@@ -293,3 +293,6 @@ The final checks will include `mvn verify` and manual playback testing.
 - Kept active packets in the queue until fully written, handling partial writes and waking blocked producers on stop.
 - Added focused tests for partial writes and cancellation.
 - Next, integrate audio decoding and output with playback timing, controls and lifecycle handling.
+- Added mixed audio and video reading to VideoDecoder while preserving the existing video-only session path.
+- Added a test for audio followed by the first video frame and end of media.
+- Next, connect copied audio packets to AudioOutput and coordinate startup with the shared playback clock.
