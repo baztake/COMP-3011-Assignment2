@@ -267,15 +267,22 @@ The final checks will include `mvn verify` and manual playback testing.
 - Updated the session test to process a frame through the pool, checking the selected effect, frame information, and
   playback generation.
 - Next, I will connect the decoder to the pool, copying decoded frames before submission.
-- Added VideoDecoder to separate video decoding from the session and frame processing. It owns opening,
-  seeking, reading, and closing the grabber on one thread.
+- Added VideoDecoder to separate video decoding from the session and frame processing. It owns opening, seeking,
+  reading, and closing the grabber on one thread.
 - Video metadata comes from the first decoded frame, which is also returned for processing. Documented borrowed frame
   ownership and captured frame numbers and timestamps in immutable snapshots.
 - Added a basic test covering configuration, seeking, first-frame metadata, end of video, and grabber cleanup.
 - Next, I will run the decoder on a session-owned thread and submit copied frames to the bounded pool, including cleanup
   when submission is interrupted or rejected.
-- Connected VideoDecoder to PlaybackSession on a named decoder thread. Each frame is copied before submission,
-  and interrupted or rejected submissions release their copies.
+- Connected VideoDecoder to PlaybackSession on a named decoder thread. Each frame is copied before submission, and
+  interrupted or rejected submissions release their copies.
 - Named processing threads and documented frame ownership, critical regions, and termination behaviour.
-- Updated the session processing test and added a focused full-queue stop test checking copy cleanup and decoder closure.
+- Updated the session processing test and added a focused full-queue stop test checking copy cleanup and decoder
+  closure.
 - Next, I will add session pause/resume admission control and the paused-preview behaviour before model integration.
+- Added a decoder admission gate to PlaybackSession. An initially paused session prepares one preview, then waits for
+  resume before reading another frame.
+- Protected pause and preview state with the session monitor. Resume and stop wake the waiting decoder, native reads and
+  pool submission stay outside the critical region. Already admitted work may finish after pausing.
+- Updated session startup calls and added a focused test checking one paused preview, admission waiting and resume.
+- Next, I will separate audio sample copying from audio-device access before adding the audio thread.

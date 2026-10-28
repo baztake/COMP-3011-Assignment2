@@ -11,6 +11,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_BGR24;
@@ -49,7 +50,7 @@ class PlaybackSessionTest {
 
             try {
                 // Act
-                session.start(decoder, 0, 1, 1, 3);
+                session.start(decoder, 0, false, 1, 1, 3);
 
                 // Wait for the result. The test timeout prevents an endless wait.
                 PreparedFrame result;
@@ -111,7 +112,7 @@ class PlaybackSessionTest {
 
         try {
             // Act
-            session.start(decoder, 0, 1, 1, 3);
+            session.start(decoder, 0, false, 1, 1, 3);
 
             // No polling frees space, so the second copy cannot enter the full queue.
             boolean reachedSecondCopy = secondCopied.await(3, TimeUnit.SECONDS);
@@ -133,6 +134,88 @@ class PlaybackSessionTest {
             session.requestStop();
             session.awaitTermination(3, TimeUnit.SECONDS);
         }
+    }
+
+    /**
+     * Checks that an initially paused session admits one preview and resumes further reads.
+     *
+     * @throws Exception if processing or test coordination fails
+     */
+    @Test
+    @Timeout(10)
+    void shouldPrepareOnePausedPreviewThenResume() throws Exception {
+        // Assemble
+        PlaybackSession session = new PlaybackSession(List.of());
+        VideoDecoder decoder = mock(VideoDecoder.class);
+        AtomicReference<Thread> decoderThread = new AtomicReference<>();
+        CountDownLatch secondRead = new CountDownLatch(1);
+        InfoFrame firstInfo = new InfoFrame(1, 0);
+        InfoFrame secondInfo = new InfoFrame(2, 40_000);
+
+        try (Frame input = new Frame(1, 1, Frame.DEPTH_UBYTE, 3)) {
+            // Observe the real owner thread without exposing it through the session API.
+            doAnswer(call -> {
+                decoderThread.set(Thread.currentThread());
+                return null;
+            }).when(decoder).open(0);
+
+            // Mocking two video frames, followed by end of video.
+            when(decoder.read())
+                .thenReturn(new VideoDecoder.DecodedFrame(input, firstInfo))
+                .thenAnswer(call -> {
+                    secondRead.countDown();
+                    return new VideoDecoder.DecodedFrame(input, secondInfo);
+                }).thenReturn(null);
+            when(decoder.videoInfo()).thenReturn(mock(InfoVideo.class));
+
+            try {
+                // Act
+                // Two queue slots ensure the observed wait is not a full-queue wait.
+                session.start(decoder, 0, true, 1, 2, 3);
+                PreparedFrame preview = awaitResult(session);
+
+                Thread owner = decoderThread.get();
+                Thread.State pausedState;
+                do {
+                    Thread.sleep(1);
+                    pausedState = owner.getState();
+                } while (pausedState != Thread.State.WAITING && owner.isAlive());
+                boolean secondReadWhilePaused = secondRead.getCount() == 0;
+
+                session.setPaused(false);
+                PreparedFrame next = awaitResult(session);
+                boolean terminated = session.awaitTermination(3, TimeUnit.SECONDS);
+
+                // Assert
+                // Ensure only the preview was read before resume woke the decoder.
+                assertThat(pausedState).isEqualTo(Thread.State.WAITING);
+                assertThat(secondReadWhilePaused).isFalse();
+                assertThat(preview.info()).isEqualTo(firstInfo);
+                assertThat(next.info()).isEqualTo(secondInfo);
+                assertThat(terminated).isTrue();
+                assertThat(session.getFailure()).isNull();
+                verify(decoder).close();
+            } finally {
+                // Stop also releases a decoder still waiting at the admission gate.
+                session.requestStop();
+                session.awaitTermination(3, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    /**
+     * Waits for the next prepared result within the enclosing test's timeout.
+     *
+     * @param session session supplying processed frames
+     * @return next processed result
+     * @throws Exception if polling or waiting fails
+     */
+    private PreparedFrame awaitResult(PlaybackSession session) throws Exception {
+        PreparedFrame result;
+        while ((result = session.pollReady()) == null) {
+            Thread.sleep(1);
+        }
+        return result;
     }
 
 }

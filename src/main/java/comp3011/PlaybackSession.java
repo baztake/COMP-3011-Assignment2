@@ -5,14 +5,13 @@ package comp3011;
 
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.experimental.NonFinal;
 import org.bytedeco.javacv.Frame;
+import org.bytedeco.javacv.FrameGrabber;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -22,13 +21,17 @@ import java.util.concurrent.TimeUnit;
  * The decoder thread owns native decoding and copies frames before submission.
  * Volatile fields publish metadata, pool access and decoder status to other threads.
  * Synchronised startup and stopping prevent publication of a pool after cancellation.
- * Audio, playback timing and model integration are not connected yet.
+ * Admission waits release the monitor; resume and stop wake the decoder.
  */
 public class PlaybackSession {
     private final List<FrameEffect> frameEffects;
 
     // Accessed under the session monitor; never join while holding that monitor.
     private Thread decoderThread;
+
+    // Protected by the session monitor; one initial preview can bypass a paused gate.
+    private boolean paused;
+    private boolean previewPending;
 
     private volatile boolean stopRequested;
     private volatile FrameProcessingPool pool;
@@ -76,6 +79,7 @@ public class PlaybackSession {
      *
      * @param decoder unstarted decoder transferred to this session
      * @param startTimestampUs starting media position in microseconds
+     * @param initiallyPaused whether to admit one preview and then wait for resume
      * @param workerCount number of processing threads
      * @param maxQueuedFrames maximum number of accepted, unpolled frames
      * @param generation playback generation attached to submitted frames
@@ -86,6 +90,7 @@ public class PlaybackSession {
     public synchronized void start(
         @NonNull VideoDecoder decoder,
         long startTimestampUs,
+        boolean initiallyPaused,
         int workerCount,
         int maxQueuedFrames,
         long generation
@@ -96,6 +101,9 @@ public class PlaybackSession {
         if (decoderThread != null || stopRequested) {
             throw new IllegalStateException("Playback session cannot be started again");
         }
+
+        paused = initiallyPaused;
+        previewPending = initiallyPaused;
 
         Thread thread = new Thread(
             () -> decodeVideo(decoder, startTimestampUs, workerCount, maxQueuedFrames, generation),
@@ -134,7 +142,7 @@ public class PlaybackSession {
                 return;
             }
 
-            VideoDecoder.DecodedFrame decoded = decoder.read();
+            VideoDecoder.DecodedFrame decoded = readNextFrame(decoder);
             if (decoded == null || stopRequested) {
                 return;
             }
@@ -174,7 +182,7 @@ public class PlaybackSession {
                 if (stopRequested) {
                     break;
                 }
-                decoded = decoder.read();
+                decoded = readNextFrame(decoder);
             }
         } catch (InterruptedException | RejectedExecutionException cancelled) {
             // Preserve any decoder-close failure suppressed onto cancellation.
@@ -200,6 +208,49 @@ public class PlaybackSession {
     }
 
     /**
+     * Waits for admission before reading the next video frame.
+     * Already admitted reads may finish after a pause request.
+     *
+     * @param decoder decoder owned by the current thread
+     * @return borrowed decoded frame, or null on stopping or end of video
+     * @throws InterruptedException if interrupted while waiting for admission
+     * @throws FrameGrabber.Exception if decoding fails
+     */
+    private VideoDecoder.DecodedFrame readNextFrame(VideoDecoder decoder)
+        throws InterruptedException, FrameGrabber.Exception {
+        synchronized (this) {
+            while (paused && !previewPending && !stopRequested) {
+                wait();
+            }
+            if (stopRequested) {
+                return null;
+            }
+
+            // Consume the initial preview permission before releasing the monitor.
+            previewPending = false;
+        }
+
+        // Native decoding must not hold the monitor needed by pause, resume or stop.
+        return decoder.read();
+    }
+
+    /**
+     * Changes admission of future decoder reads without waiting for in-flight work.
+     * Ordinary pausing grants no preview; resuming wakes the decoder.
+     * Presentation timing and audio must be controlled separately.
+     *
+     * @param paused whether future reads should wait
+     */
+    public synchronized void setPaused(boolean paused) {
+        this.paused = paused;
+        if (!paused) {
+            // An early resume must not leave a preview permission for a later pause.
+            previewPending = false;
+            notifyAll();
+        }
+    }
+
+    /**
      * Retrieves the oldest processed result without waiting for processing.
      * Poll only when the caller's single pending presentation slot is empty.
      *
@@ -214,11 +265,12 @@ public class PlaybackSession {
 
     /**
      * Requests cancellation without waiting for decoder or worker termination.
-     * Interrupts a decoder waiting for queue space and cancels accepted pool work.
+     * Wakes admission waits, interrupts queue-space waits and cancels accepted pool work.
      * Native decoding may delay interruption; only the decoder thread closes it.
      */
     public synchronized void requestStop() {
         stopRequested = true;
+        notifyAll();
         if (decoderThread != null) {
             decoderThread.interrupt();
         }
@@ -230,7 +282,7 @@ public class PlaybackSession {
     /**
      * Waits for decoder and worker exit using one shared timeout budget.
      * Call from a lifecycle thread, never JavaFX or a session worker.
-     * Does not request stopping; graceful completion still requires result polling.
+     * Does not request stopping; graceful completion requires polling and resume if paused.
      *
      * @param timeout combined termination waiting time; nonpositive values only check status
      * @param unit unit of the timeout
