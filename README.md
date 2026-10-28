@@ -253,3 +253,5 @@ The final checks will include `mvn verify` and manual playback testing.
   awaitTermination confirms the workers have stopped.
 - Updated the planning notes to match the implemented queue limit, shutdown methods, and frame-input ownership.
 - Defined dependency versions, fixed logging
+- Added the PlaybackClock to support synchronised presentation and audio timing. Supports pausing and resuming, and a
+  test to verify functionality.
