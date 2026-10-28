@@ -289,3 +289,7 @@ The final checks will include `mvn verify` and manual playback testing.
 - Extracted audio sample conversion into AudioSampleCopier, separating it from AudioPlayer's device access.
 - Documented that each decoder must own its copier and the audio-output thread must own device access.
 - Next, I will add audio output ownership on a dedicated thread with a bounded queue of copied, timestamped PCM packets.
+- Added AudioOutput with a bounded FIFO of copied, timestamped PCM packets and a dedicated audio-device owner thread.
+- Kept active packets in the queue until fully written, handling partial writes and waking blocked producers on stop.
+- Added focused tests for partial writes and cancellation.
+- Next, integrate audio decoding and output with playback timing, controls and lifecycle handling.
