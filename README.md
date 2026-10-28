@@ -7,43 +7,99 @@ Multithreaded implementation of the Video Player app.
 The player provides a single-threaded model and a multithreaded model through the PlaybackModel interface.
 VideoPlayerController selects the model and forwards the same controls and view callbacks to either implementation.
 
-The multithreaded model divides playback into decoding, frame processing, presentation, and audio output. These tasks
-can overlap, while ownership and bounded queues control how data moves between them.
+The multithreaded model separates playback into decoding, frame processing, presentation, audio output, and lifecycle
+management. These tasks can overlap, while ownership rules and bounded queues control how data moves between them.
+
+The single-threaded model is retained as a selectable playback mode and comparison baseline. It has been modified from
+the supplied starter, so measurements against this mode should be described as comparisons with the selectable
+single-threaded model, not automatically as comparisons with the untouched starter.
 
 ### Threads and Responsibilities
 
-| Thread                    | Responsibility                                                                                          |
-|---------------------------|---------------------------------------------------------------------------------------------------------|
-| JavaFX application thread | Handles controls, polls prepared frames, presents images and updates the view.                          |
-| Lifecycle thread          | Starts and stops sessions in order and waits for background components to terminate.                    |
-| Video decoder thread      | Opens, reads and closes the video grabber. Copies decoded frames before submitting them for processing. |
-| Frame processing workers  | Apply the selected effects and convert frames into images for presentation.                             |
-| Audio decoder thread      | Opens, reads and closes a separate audio grabber, and copies decoded samples into PCM packets.          |
-| Audio output thread       | Opens, writes to, pauses, resumes and closes the audio device.                                          |
+| Thread                    | Responsibility                                                                                           |
+|---------------------------|----------------------------------------------------------------------------------------------------------|
+| JavaFX application thread | Handles controls, polls prepared frames, presents images, and updates the view.                          |
+| Lifecycle thread          | Starts and stops sessions in order and waits for background components to terminate.                     |
+| Video decoder thread      | Opens, reads, and closes the video grabber. Copies decoded frames before submitting them for processing. |
+| Frame processing workers  | Apply the selected effects and convert frames into images for presentation.                              |
+| Audio decoder thread      | Opens, reads, and closes a separate audio grabber, and copies decoded samples into PCM packets.          |
+| Audio output thread       | Opens, writes to, pauses, resumes, and closes the audio device.                                          |
 
-The audio and video decoders use separate grabbers. This allows each path to use bounded buffering without one stream
-blocking the other before playback has started. The additional decoding and resource costs should be considered during
-performance testing.
+The JavaFX thread does not decode video, apply effects, write audio, or wait for session threads to terminate. This
+leaves the event thread available to handle input and render the interface while background work continues.
 
-### Video Frame Ownership and Ordering
+### Independent Audio and Video Decoding
 
-The video grabber can reuse its decoded frame buffer on the next read. The decoder therefore copies each frame before
-submitting it to the processing pool.
+Audio and video use separate grabbers and decoder threads. This allows the two streams to use bounded queues
+independently.
 
-After a submission is accepted, the processing task owns the copied frame. If the submission is interrupted or rejected,
-the decoder retains responsibility for closing the copy. During cancellation, an atomic ownership claim ensures that an
-unstarted task can release its input, while a running task keeps its input until processing has exited.
+With one decoder reading both streams, a full audio queue could block the decoder before it reaches the first video
+frame, while audio output waits for a playback clock based on that frame. Separate readers avoid this particular startup
+dependency and allow each stream to make progress independently.
+
+The trade-off is that the same media is opened and read through two grabbers. This can increase decoding, I/O,
+native-memory, and thread costs. The design does not assume that two grabbers are inherently faster than one; their cost
+should be included in performance measurements.
+
+### Video Frame Ownership
+
+A decoded frame returned by the video grabber is borrowed. The grabber can reuse its buffer on a subsequent read, so the
+decoder copies the frame before submitting it to the processing pool.
+
+The decoder owns the copy until submission is accepted. Once accepted, the processing task owns it. If submission is
+interrupted or rejected, the decoder closes the copy. This prevents the decoder and a worker from modifying the same
+frame buffer.
+
+Cancellation uses an atomic ownership claim:
+
+- If a task has not started, cancellation can claim and close its input.
+- If a task has started, the worker retains ownership and closes the input after processing exits.
+
+Cancelling a future does not prove that a running worker has stopped. The input must not be released while an effect is
+still using it, and termination must be awaited separately.
+
+Frame copying has a memory and processing cost. The copies are currently created and released for individual tasks
+rather than reused from a frame-buffer pool. Reusing buffers is a possible optimisation, but it would require
+measurement and the same ownership guarantees.
+
+### Frame Processing and Ordering
 
 Each processing thread has its own worker, effect processors, and conversion state. Effects are applied to each frame in
-command-line order, including repeated effects. Different frames can be processed concurrently without sharing mutable
-processor state.
+command-line order, including repeated effects.
+
+Different frames can be processed concurrently, but the effects on one frame remain sequential. Processor instances are
+not shared between workers because effects can contain mutable state or scratch buffers. Effect occurrence indices are
+assigned consistently so repeated effects use equivalent seeds across workers.
 
 The pool stores results in submission order. The JavaFX thread only polls the oldest result, so a later frame cannot be
 presented before an earlier frame even if its processing finishes first. Polling does not wait for an unfinished result.
 
-The result queue has a fixed capacity. The JavaFX model polls only when its single pending presentation slot is empty,
-so there can be at most N accepted, unpolled results plus one pending presentation frame. The displayed image, a
-decoder-held copy waiting for submission, and audio buffers are outside this limit.
+The trade-off is that a slow frame can hold up later completed frames. This preserves frame order, but it can reduce
+throughput when processing times vary.
+
+### Worker Count and Bounded Work
+
+The processing pool uses a fixed number of workers for each session. The current default is based on the number of
+available processors, subtracting two and limiting the result to between one and eight workers.
+
+This is a starting heuristic. It attempts to leave processing capacity for the JavaFX, decoder, audio, and lifecycle
+work, but it does not reserve CPU cores. The operating system decides where threads execute. The best worker count can
+vary with the machine, video, effects, and other running work, so the setting should be evaluated using measurements.
+
+The result queue is bounded to twice the worker count, with a minimum capacity of two. The bound includes accepted tasks
+that are queued, running, or completed but not yet polled. Completing a task does not free a queue position; polling or
+discarding its result does.
+
+The JavaFX model polls only when its single pending presentation slot is empty. This gives a bound of N accepted,
+unpolled results plus one pending presentation frame. The currently displayed image, a decoder-held copy waiting for
+submission, audio buffers, and device buffers are additional allocations outside this limit.
+
+A full result queue makes the decoder wait rather than allowing an unlimited backlog. Waiting releases the pool monitor,
+and polling or stopping wakes waiting submitters. The JavaFX thread does not wait for queue space.
+
+A larger queue can help absorb temporary differences in processing time, but it also uses more memory and may increase
+the amount of work discarded during a seek or stop. A smaller queue reduces buffering but may leave workers idle. The
+current capacity is a starting choice rather than a proven optimum.
 
 ### Playback Timing and Audio
 
@@ -52,7 +108,7 @@ between the playback and audio paths. Pausing freezes the clock, and resuming ad
 duration is excluded.
 
 For playback with audio, the session coordinates startup before starting the shared clock. The clock uses the earlier of
-the first video timestamp and first nonempty audio timestamp as its media origin. For video-only playback, the model
+the first video timestamp and the first nonempty audio timestamp as its media origin. For video-only playback, the model
 uses a video clock established from the first prepared frame.
 
 AudioDecoder copies samples before its grabber can reuse them. AudioPreparation passes timestamped PCM packets to the
@@ -60,8 +116,12 @@ bounded AudioOutput queue. AudioOutput owns the device and retains a packet unti
 including when a write is partial.
 
 Pause and resume requests are published to the audio output thread, which performs the corresponding device operations.
-At end of input, audio output waits for the Java Sound line buffer to empty before closing. Line-buffer emptiness does
-not guarantee that sound has finished reaching the physical speakers.
+An operation already admitted to the device can finish before a control request is applied. Audio toggling restarts the
+session at the current logical position so previously buffered audio is not resumed at an outdated media time.
+
+At end of input, audio output waits for the Java Sound line buffer to empty before closing. Line-buffer emptiness
+indicates that the Java Sound line can accept its full buffer capacity; it does not guarantee that sound has finished
+reaching the physical speakers. Actual audio continuity and A/V synchronisation require testing on audio hardware.
 
 ### Controls, Seeking, and Lifecycle
 
@@ -69,25 +129,59 @@ The JavaFX thread handles control requests without waiting for decoding, process
 stops admission of future video reads; work already admitted may still finish. When seeking while paused, the session
 admits one frame for preview and remains paused.
 
+The first video read remains admitted during startup even if pause and resume requests arrive before the decoder opens.
+This allows the session to obtain the metadata needed to process a seek requested during startup.
+
 The lifecycle executor serialises session replacement. A seek or stop invalidates the current generation and requests
-cancellation. The lifecycle thread waits for the old session to terminate before starting its replacement.
+cancellation. The lifecycle thread waits for the old session to terminate before starting its replacement, preventing
+overlapping sessions from simultaneously owning playback resources.
 
 Each session has a generation number. The model checks the generation before publishing sessions, frames, and errors so
 an obsolete session cannot update the current playback state. Repeated relative seeks retain their requested position,
 and requests made before duration metadata is available are applied after that metadata is known.
 
-Stopping wakes waiting producers and requests cancellation before termination is awaited. A termination timeout is
-reported rather than treated as successful cleanup. Worker interruption is checked between effects, so an effect or
-native operation already in progress can delay termination.
+Stopping wakes waiting producers and requests cancellation before termination is awaited. Waiting takes place off the
+JavaFX thread. A termination timeout is reported rather than treated as successful cleanup or permission to start an
+overlapping session.
+
+Worker interruption is checked between effects and before conversion. An effect or native operation already in progress
+can delay termination. A cancellation request or cancelled future therefore does not by itself establish that every
+worker and native resource has exited.
 
 ### Completion and Errors
 
 Decoder end-of-file does not immediately mean playback has finished. The model waits for the remaining ordered video
 results, its pending presentation frame, and the audio path to drain before reporting completion.
 
+A null result from pollReady means that no result is ready at that moment; it does not mean that decoding has reached
+end-of-file.
+
 Decoder and audio failures are published through session state. Processing failures are reported when the corresponding
-result is polled. The model checks for session failures during playback, including while paused, and stops the session
-when an error occurs.
+result is polled. The model checks for session failures during playback, including while paused, and requests session
+stop when an error occurs.
+
+### Performance Evidence and Limits
+
+In the Titan specification part 2 run, the modified player achieved 14.014 fps under the heaviest tested
+workload, compared with 3.744 fps for Titan's reference player. Titan reported 374.31% performance and use of 6.82 out
+of 8 cores. Both players fell behind real time under that workload.
+
+The same Titan run reported approximately 24 fps for the lighter tested workloads. These results provide evidence of
+improved performance on Titan for the tested media and effects. They do not establish a fixed speedup for every machine
+or workload.
+
+A separate generated-video test compared the selectable single-threaded and multithreaded models with the same HD video
+and effect sequence. In one run, the single-threaded mode took 16.824 seconds and the multithreaded mode took 8.583
+seconds. Both fell behind the video's 60 fps target.
+
+That test hashes complete frames in the JavaFX callback, so its timing includes the test's image-hashing overhead. It
+compares the selectable single-threaded model, which has been modified from the supplied starter, rather than the
+untouched starter. A clean timed comparison should use a lightweight presentation callback and run full-frame
+correctness checks separately.
+
+Preparation headroom indicates how early or late a frame was ready relative to its deadline. Positive headroom can
+include the effect of pre-buffering, so an individual headroom value is not a direct measurement of the time taken by
+one effect.
 
 ## Planning
 
@@ -418,3 +512,9 @@ The final checks will include `mvn verify` and manual playback testing.
   a comparison of displayed frames between the two modes.
 - Tested playback and controls locally. Titan played the lighter effect combinations in real time, but reported too many
   missed frames for its heaviest combination. Further performance measurements and tuning are required.
+- Compared the selectable single-threaded and multithreaded models using the same generated 1920×1080, 60 fps video and
+  repeated effect chain. Both modes presented 120 frames. The single-threaded mode took 16.824 seconds and the
+  multithreaded mode took 8.583 seconds, a 1.96× ratio in elapsed time.
+- Both modes fell behind the 60 fps target. The test hashes every frame on the JavaFX thread, so the measurements
+  include test overhead. The single-threaded model used in this comparison is the selectable modified model, rather than
+  the untouched supplied starter.

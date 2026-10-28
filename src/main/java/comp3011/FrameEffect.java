@@ -8,9 +8,9 @@ package comp3011;
  *
  * <p>To add an effect:</p>
  * <ol>
- *     <li>Implement a FrameProcessor subclass.</li>
+ *     <li>Implement a FrameProcessor subclass and initialise video-dependent state.</li>
  *     <li>Add an enum constant with unique short and long options.</li>
- *     <li>Add its construction case to createProcessor().</li>
+ *     <li>Add its construction case to createProcessor(), creating a separate instance for each occurrence. Pass occurrenceIndex to effects that require independent deterministic seeds.</li>
  *     <li>Add its description to CommandLineController.printHelp().</li>
  *     <li>Update alias, construction and help-output regression tests.</li>
  * </ol>

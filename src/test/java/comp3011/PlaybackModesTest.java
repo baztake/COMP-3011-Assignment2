@@ -168,7 +168,7 @@ class PlaybackModesTest {
     }
 
     /**
-     * Compares the frames presented by both modes using the same video and effect.
+     * Compares every pixel of the frames presented by both modes using the same video and effects.
      *
      * @param directory directory for the temporary video
      * @throws Exception if video creation or playback coordination fails
@@ -178,62 +178,110 @@ class PlaybackModesTest {
     void shouldPresentTheSameFramesInBothModes(@TempDir Path directory) throws Exception {
         // Assemble
         File video = directory.resolve("comparison.mp4").toFile();
+
         try (FFmpegFrameRecorder recorder = new FFmpegFrameRecorder(video, 64, 48);
              Frame frame = new Frame(64, 48, Frame.DEPTH_UBYTE, 3)) {
             recorder.setFormat("mp4");
             recorder.setVideoCodec(AV_CODEC_ID_MPEG4);
             recorder.setFrameRate(24);
             recorder.start();
+
             ByteBuffer pixels = (ByteBuffer) frame.image[0];
+
             for (int index = 0; index < 48; index++) {
                 for (int position = 0; position < pixels.capacity(); position++) {
                     pixels.put(position, (byte) (index * 5));
                 }
                 recorder.record(frame);
             }
+
             recorder.stop();
         }
+
         CountDownLatch toolkit = new CountDownLatch(1);
+
         try {
             Platform.startup(toolkit::countDown);
         } catch (IllegalStateException alreadyStarted) {
             Platform.runLater(toolkit::countDown);
         }
+
         if (!toolkit.await(3, TimeUnit.SECONDS)) {
             throw new IllegalStateException("JavaFX did not start");
         }
+
         Platform.setImplicitExit(false);
-        List<List<Integer>> outputs = new ArrayList<>();
+
+        List<List<List<Integer>>> outputs = new ArrayList<>();
         List<Boolean> completions = new ArrayList<>();
         List<String> errors = new ArrayList<>();
 
+        // Repeated flicker checks that separate occurrences produce matching output.
+        List<FrameEffect> effects = List.of(
+            FrameEffect.FLICKER,
+            FrameEffect.BLACK_AND_WHITE,
+            FrameEffect.FLICKER
+        );
+
         // Act
         for (boolean multithreaded : new boolean[]{false, true}) {
-            List<Integer> pixels = new CopyOnWriteArrayList<>();
+            List<List<Integer>> frames = new CopyOnWriteArrayList<>();
             CountDownLatch finished = new CountDownLatch(1);
             AtomicReference<String> error = new AtomicReference<>();
+
             Consumer<javafx.scene.image.Image> image = result -> {
-                if (result != null) pixels.add(result.getPixelReader().getArgb(0, 0));
+                if (result == null) {
+                    return;
+                }
+
+                // Copy every pixel while the image is available on the JavaFX thread.
+                List<Integer> framePixels = new ArrayList<>();
+
+                for (int y = 0; y < (int) result.getHeight(); y++) {
+                    for (int x = 0; x < (int) result.getWidth(); x++) {
+                        framePixels.add(result.getPixelReader().getArgb(x, y));
+                    }
+                }
+
+                frames.add(framePixels);
             };
+
             Consumer<String> status = value -> {
-                if (value.startsWith("Error:")) error.set(value);
-                if (value.equals("Playback finished")) finished.countDown();
+                if (value.startsWith("Error:")) {
+                    error.set(value);
+                }
+                if (value.equals("Playback finished")) {
+                    finished.countDown();
+                }
             };
+
             PlaybackModel model = multithreaded
-                ? new MultithreadedVideoPlayerModel(false, List.of(FrameEffect.BLACK_AND_WHITE), (width, height) -> {
-            }, image, status, (open, paused) -> {
-            }, enabled -> {
-            })
-                : new VideoPlayerModel(false, List.of(FrameEffect.BLACK_AND_WHITE), (width, height) -> {
-            }, image, status, (open, paused) -> {
-            }, enabled -> {
-            });
+                ? new MultithreadedVideoPlayerModel(
+                false,
+                effects,
+                (width, height) -> {},
+                image,
+                status,
+                (open, paused) -> {},
+                enabled -> {}
+            )
+                : new VideoPlayerModel(
+                false,
+                effects,
+                (width, height) -> {},
+                image,
+                status,
+                (open, paused) -> {},
+                enabled -> {}
+            );
+
             try {
                 runOnJavaFx(() -> model.play(video));
+
                 boolean completed = finished.await(6, TimeUnit.SECONDS);
                 completions.add(completed);
                 errors.add(error.get());
-                outputs.add(List.copyOf(pixels));
+                outputs.add(List.copyOf(frames));
             } finally {
                 runOnJavaFx(model::shutdown);
             }
