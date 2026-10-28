@@ -189,6 +189,15 @@ public class AudioPreparation {
     }
 
     /**
+     * Requests audio device pause or resume.
+     *
+     * @param paused whether audio output should be paused
+     */
+    public void setPaused(boolean paused) {
+        output.setPaused(paused);
+    }
+
+    /**
      * Requests cancellation of audio decoding and output without waiting.
      * Native calls may delay termination; each owner closes its own resources.
      */
@@ -209,6 +218,15 @@ public class AudioPreparation {
      */
     public boolean isFinished() {
         return decoderFinished && (!audioAvailable || output.isTerminated());
+    }
+
+    /**
+     * Checks whether decoder ownership was transferred by a successful start.
+     *
+     * @return true if the decoder thread was started
+     */
+    synchronized boolean hasStarted() {
+        return decoderThread != null;
     }
 
     /**

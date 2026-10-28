@@ -33,7 +33,7 @@ import java.util.function.Consumer;
  * callbacks supplied by its owning {@link VideoPlayerController}, keeping it
  * decoupled from the JavaFX view.
  */
-public class VideoPlayerModel {
+public class VideoPlayerModel implements PlaybackModel {
     private static final long NO_SEEK_REQUEST = -1; // Sentinel value used when no seek position is active.
     private static final long FIVE_SECONDS_US = 5_000_000L;
     private static final long AUDIO_LEAD_NS = 30_000_000L;

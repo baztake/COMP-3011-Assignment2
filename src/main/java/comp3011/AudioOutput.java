@@ -14,19 +14,22 @@ import java.util.concurrent.TimeUnit;
  * Owns audio-device access on one thread and queues copied PCM packets.
  * The queue includes the packet being written until all its bytes are accepted.
  * The monitor protects the queue and lifecycle, device calls happen outside it.
- * Clock pause is checked between writes, an admitted write and buffered audio may continue.
- * Finished input drains accepted packets; stop discards queued packets.
- * A selected or in-progress device drain may continue after stop.
+ * Pause requests are applied on the device owner thread between writes.
+ * Finished input waits for the Java Sound line buffer to empty; stop discards queued packets.
  */
 public class AudioOutput {
 
     private static final long RETRY_MS = 5;
+    private static final long AUDIO_LEAD_NS = 30_000_000L;
     private final PlaybackClock clock;
     private final int capacity;
     private final Queue<Packet> packets = new ArrayDeque<>();
     // Accessed under the monitor; never join while holding it.
     private Thread thread;
     private volatile boolean closed;
+    private volatile boolean paused;
+    // Only the audio owner thread changes devicePaused.
+    private boolean devicePaused;
     // Protected by the monitor; prevents submissions after end of input.
     private boolean inputFinished;
     /**
@@ -121,8 +124,23 @@ public class AudioOutput {
                 if (closed) return;
                 ready = true;
             }
-            Packet packet;
-            while ((packet = awaitPacket()) != null) {
+            while (!closed) {
+                applyPause(player);
+                Packet packet = awaitPacket();
+                if (packet == null) {
+                    if (closed) break;
+                    synchronized (this) {
+                        if (!inputFinished || !packets.isEmpty() || paused != devicePaused) continue;
+                    }
+                    // Wait for the line buffer to empty while still servicing pause and stop.
+                    while (!closed) {
+                        applyPause(player);
+                        if (player.isBufferEmpty()) break;
+                        waitBeforeRetry();
+                    }
+                    break;
+                }
+
                 writePacket(player, packet);
                 synchronized (this) {
                     // Stop may have cleared the queue during a device write.
@@ -131,16 +149,6 @@ public class AudioOutput {
                         notifyAll();
                     }
                 }
-            }
-
-            // Queue empty means bytes were accepted, not necessarily played.
-            // Drain on the owner before close flushes the device.
-            boolean drain;
-            synchronized (this) {
-                drain = inputFinished && !closed;
-            }
-            if (drain) {
-                player.drain();
             }
         } catch (InterruptedException interrupted) {
             if (!closed || interrupted.getSuppressed().length > 0) failure = interrupted;
@@ -164,7 +172,7 @@ public class AudioOutput {
      * @throws InterruptedException if interrupted while waiting
      */
     private synchronized Packet awaitPacket() throws InterruptedException {
-        while (packets.isEmpty() && !closed && !inputFinished) wait();
+        while (packets.isEmpty() && !closed && !inputFinished && paused == devicePaused) wait();
         return closed ? null : packets.peek();
     }
 
@@ -178,7 +186,8 @@ public class AudioOutput {
     private void writePacket(AudioPlayer player, Packet packet) throws InterruptedException {
         int offset = 0;
         while (!closed && offset < packet.samples().length) {
-            if (!clock.isDue(packet.timestampUs(), System.nanoTime())) {
+            applyPause(player);
+            if (paused || !clock.isDue(packet.timestampUs(), System.nanoTime() + AUDIO_LEAD_NS)) {
                 waitBeforeRetry();
                 continue;
             }
@@ -186,6 +195,33 @@ public class AudioOutput {
             if (written <= 0) waitBeforeRetry();
             else offset += written;
         }
+    }
+
+    /**
+     * Applies the latest pause request on the audio owner thread.
+     *
+     * @param player device owned by the current thread
+     */
+    private void applyPause(AudioPlayer player) {
+        boolean desiredPause = paused;
+        if (desiredPause != devicePaused) {
+            if (desiredPause) {
+                player.pause();
+            } else {
+                player.resume();
+            }
+            devicePaused = desiredPause;
+        }
+    }
+
+    /**
+     * Requests device pause or resume without calling the device on this thread.
+     *
+     * @param paused whether device output should be paused
+     */
+    public synchronized void setPaused(boolean paused) {
+        this.paused = paused;
+        notifyAll();
     }
 
     /**
@@ -199,8 +235,8 @@ public class AudioOutput {
 
     /**
      * Rejects new input and lets accepted packets finish in order.
-     * The owner drains queued device audio before closing.
-     * Does not wait for completion; device draining may delay stopping.
+     * The owner waits for the device line buffer to empty before closing.
+     * Does not wait for completion.
      * A stop request discards packets that have not been written.
      *
      * @throws IllegalStateException if output has not started
@@ -214,7 +250,6 @@ public class AudioOutput {
     /**
      * Rejects input, discards queued packets and interrupts the owner.
      * Device closure remains the owner thread's responsibility.
-     * A selected or in-progress device drain may delay closure.
      */
     public synchronized void requestStop() {
         closed = true;
@@ -237,7 +272,7 @@ public class AudioOutput {
     /**
      * Waits for owner exit without holding the monitor.
      * Call from a lifecycle thread after stopping or finishing input, never JavaFX.
-     * Device drain may block and may not respond promptly to interruption.
+     * A device call may delay interruption and termination.
      *
      * @param timeout maximum wait; nonpositive values only check status
      * @param unit    timeout unit

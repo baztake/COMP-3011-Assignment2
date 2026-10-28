@@ -20,6 +20,47 @@ import static org.mockito.Mockito.*;
 class PlaybackSessionTest {
 
     /**
+     * Checks that an early resume and pause cannot block the first metadata read.
+     *
+     * @throws Exception if test coordination or cleanup fails
+     */
+    @Test
+    @Timeout(10)
+    void shouldReadFirstFrameAfterResumeAndPauseDuringOpen() throws Exception {
+        // Assemble
+        PlaybackSession session = new PlaybackSession(List.of());
+        VideoDecoder decoder = mock(VideoDecoder.class);
+        CountDownLatch opening = new CountDownLatch(1);
+        CountDownLatch continueOpen = new CountDownLatch(1);
+        CountDownLatch firstRead = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            opening.countDown();
+            continueOpen.await();
+            return null;
+        }).when(decoder).open(0);
+        when(decoder.read()).thenAnswer(invocation -> {
+            firstRead.countDown();
+            return null;
+        });
+
+        try {
+            // Act: reproduce the ordering of a deferred seek during slow startup.
+            session.start(decoder, 0, true, 1, 1, 1);
+            assertThat(opening.await(3, TimeUnit.SECONDS)).isTrue();
+            session.setPaused(false);
+            session.setPaused(true);
+            continueOpen.countDown();
+
+            // Assert: the first read remains admitted despite the later pause.
+            assertThat(firstRead.await(3, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            continueOpen.countDown();
+            session.requestStop();
+            assertThat(session.awaitTermination(3, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    /**
      * Checks that the decoder processes a frame and completion waits for its result to be polled.
      *
      * @throws Exception if processing, result retrieval or cleanup fails

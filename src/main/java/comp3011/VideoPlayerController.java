@@ -28,7 +28,7 @@ import java.util.function.BiConsumer;
  * </p>
  */
 public class VideoPlayerController {
-    private final VideoPlayerModel model;
+    private final PlaybackModel model;
     private final VideoPlayerView view;
     private final BiConsumer<Integer, Integer> videoSizeChangedHandler;
 
@@ -39,7 +39,12 @@ public class VideoPlayerController {
     ) {
         this.view = new VideoPlayerView();
         this.videoSizeChangedHandler = videoSizeChangedHandler;
-        model = new VideoPlayerModel(
+        String mode = System.getProperty("comp3011.playback", System.getenv().getOrDefault("COMP3011_PLAYBACK", "multi"));
+        if (!mode.equalsIgnoreCase("single") && !mode.equalsIgnoreCase("multi")) {
+            throw new IllegalArgumentException("comp3011.playback must be single or multi");
+        }
+        if (mode.equalsIgnoreCase("single")) {
+            model = new VideoPlayerModel(
             audioEnabled,
             frameEffects,
             this::onVideoSizeChanged,
@@ -47,7 +52,13 @@ public class VideoPlayerController {
             this::onStatusChanged,
             this::onPlaybackStateChanged,
             this::onAudioOutputStateChanged
-        );
+            );
+        } else {
+            model = new MultithreadedVideoPlayerModel(
+                audioEnabled, frameEffects, this::onVideoSizeChanged, this::onFrameReady,
+                this::onStatusChanged, this::onPlaybackStateChanged, this::onAudioOutputStateChanged
+            );
+        }
 
         view.getStartOverButton().setOnAction(_ -> startOver());
         view.getBackFiveButton().setOnAction(_ -> backFiveSeconds());

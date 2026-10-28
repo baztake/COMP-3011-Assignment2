@@ -36,6 +36,11 @@ public class PlaybackSession {
 
     private volatile boolean stopRequested;
     private volatile FrameProcessingPool pool;
+    /** -- GETTER --
+     * @return media duration in microseconds, or a nonpositive value if unknown
+     */
+    @Getter
+    private volatile long durationUs;
     // Registered before submission, even while the first frame is not yet visible.
     private volatile FrameProcessingPool ownedPool;
     private volatile AudioPreparation audioPreparation;
@@ -123,6 +128,7 @@ public class PlaybackSession {
 
         PlaybackClock clock = audio.playbackClock();
         clock.setPaused(true, System.nanoTime());
+        audio.setPaused(true);
         playbackClock = clock;
         audioPreparation = audio;
         try {
@@ -180,7 +186,7 @@ public class PlaybackSession {
         }
 
         paused = initiallyPaused;
-        previewPending = initiallyPaused;
+        previewPending = true; // The first read is required to establish metadata even after an early pause.
 
         Thread thread = new Thread(
             () -> decodeVideo(decoder, startTimestampUs, workerCount, maxQueuedFrames, generation),
@@ -215,6 +221,7 @@ public class PlaybackSession {
                 return;
             }
             decoder.open(startTimestampUs);
+            durationUs = decoder.durationUs();
             if (stopRequested) {
                 return;
             }
@@ -351,6 +358,7 @@ public class PlaybackSession {
                 synchronized (this) {
                     if (stopRequested) return false;
                     playbackClock.reset(firstTimestampUs, System.nanoTime(), paused);
+                    audio.setPaused(paused);
                     startupReady = true;
                     return true;
                 }
@@ -395,7 +403,7 @@ public class PlaybackSession {
      * Ordinary pausing grants no preview; resuming wakes the decoder.
      * Before startup finishes, only the desired pause state changes.
      * After startup, the shared clock controls audio scheduling and presentation timing.
-     * An admitted write and device-buffered audio may continue after pausing.
+     * An admitted write can finish before the device owner applies the pause.
      *
      * @param paused whether future reads should wait
      */
@@ -403,10 +411,12 @@ public class PlaybackSession {
         this.paused = paused;
         if (startupReady && playbackClock != null) {
             playbackClock.setPaused(paused, System.nanoTime());
+            if (audioPreparation != null) {
+                audioPreparation.setPaused(paused);
+            }
         }
         if (!paused) {
-            // An early resume must not leave a preview permission for a later pause.
-            previewPending = false;
+            // Preserve first-read admission until the decoder actually consumes it.
             notifyAll();
         }
     }
@@ -464,6 +474,15 @@ public class PlaybackSession {
         if (ownedPool != null) {
             ownedPool.requestStop();
         }
+    }
+
+    /**
+     * Checks whether decoder ownership was transferred by a successful start.
+     *
+     * @return true if the decoder thread was started
+     */
+    synchronized boolean hasStarted() {
+        return decoderThread != null;
     }
 
     /**

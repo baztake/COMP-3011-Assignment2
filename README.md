@@ -2,6 +2,93 @@
 
 Multithreaded implementation of the Video Player app.
 
+## Final Concurrency Design
+
+The player provides a single-threaded model and a multithreaded model through the PlaybackModel interface.
+VideoPlayerController selects the model and forwards the same controls and view callbacks to either implementation.
+
+The multithreaded model divides playback into decoding, frame processing, presentation, and audio output. These tasks
+can overlap, while ownership and bounded queues control how data moves between them.
+
+### Threads and Responsibilities
+
+| Thread                    | Responsibility                                                                                          |
+|---------------------------|---------------------------------------------------------------------------------------------------------|
+| JavaFX application thread | Handles controls, polls prepared frames, presents images and updates the view.                          |
+| Lifecycle thread          | Starts and stops sessions in order and waits for background components to terminate.                    |
+| Video decoder thread      | Opens, reads and closes the video grabber. Copies decoded frames before submitting them for processing. |
+| Frame processing workers  | Apply the selected effects and convert frames into images for presentation.                             |
+| Audio decoder thread      | Opens, reads and closes a separate audio grabber, and copies decoded samples into PCM packets.          |
+| Audio output thread       | Opens, writes to, pauses, resumes and closes the audio device.                                          |
+
+The audio and video decoders use separate grabbers. This allows each path to use bounded buffering without one stream
+blocking the other before playback has started. The additional decoding and resource costs should be considered during
+performance testing.
+
+### Video Frame Ownership and Ordering
+
+The video grabber can reuse its decoded frame buffer on the next read. The decoder therefore copies each frame before
+submitting it to the processing pool.
+
+After a submission is accepted, the processing task owns the copied frame. If the submission is interrupted or rejected,
+the decoder retains responsibility for closing the copy. During cancellation, an atomic ownership claim ensures that an
+unstarted task can release its input, while a running task keeps its input until processing has exited.
+
+Each processing thread has its own worker, effect processors, and conversion state. Effects are applied to each frame in
+command-line order, including repeated effects. Different frames can be processed concurrently without sharing mutable
+processor state.
+
+The pool stores results in submission order. The JavaFX thread only polls the oldest result, so a later frame cannot be
+presented before an earlier frame even if its processing finishes first. Polling does not wait for an unfinished result.
+
+The result queue has a fixed capacity. The JavaFX model polls only when its single pending presentation slot is empty,
+so there can be at most N accepted, unpolled results plus one pending presentation frame. The displayed image, a
+decoder-held copy waiting for submission, and audio buffers are outside this limit.
+
+### Playback Timing and Audio
+
+PlaybackClock maps media timestamps to monotonic playback time. Its synchronised methods protect timing decisions shared
+between the playback and audio paths. Pausing freezes the clock, and resuming adjusts the timing origin so the paused
+duration is excluded.
+
+For playback with audio, the session coordinates startup before starting the shared clock. The clock uses the earlier of
+the first video timestamp and first nonempty audio timestamp as its media origin. For video-only playback, the model
+uses a video clock established from the first prepared frame.
+
+AudioDecoder copies samples before its grabber can reuse them. AudioPreparation passes timestamped PCM packets to the
+bounded AudioOutput queue. AudioOutput owns the device and retains a packet until all of its bytes have been written,
+including when a write is partial.
+
+Pause and resume requests are published to the audio output thread, which performs the corresponding device operations.
+At end of input, audio output waits for the Java Sound line buffer to empty before closing. Line-buffer emptiness does
+not guarantee that sound has finished reaching the physical speakers.
+
+### Controls, Seeking, and Lifecycle
+
+The JavaFX thread handles control requests without waiting for decoding, processing, or thread termination. Pausing
+stops admission of future video reads; work already admitted may still finish. When seeking while paused, the session
+admits one frame for preview and remains paused.
+
+The lifecycle executor serialises session replacement. A seek or stop invalidates the current generation and requests
+cancellation. The lifecycle thread waits for the old session to terminate before starting its replacement.
+
+Each session has a generation number. The model checks the generation before publishing sessions, frames, and errors so
+an obsolete session cannot update the current playback state. Repeated relative seeks retain their requested position,
+and requests made before duration metadata is available are applied after that metadata is known.
+
+Stopping wakes waiting producers and requests cancellation before termination is awaited. A termination timeout is
+reported rather than treated as successful cleanup. Worker interruption is checked between effects, so an effect or
+native operation already in progress can delay termination.
+
+### Completion and Errors
+
+Decoder end-of-file does not immediately mean playback has finished. The model waits for the remaining ordered video
+results, its pending presentation frame, and the audio path to drain before reporting completion.
+
+Decoder and audio failures are published through session state. Processing failures are reported when the corresponding
+result is polled. The model checks for session failures during playback, including while paused, and stops the session
+when an error occurs.
+
 ## Planning
 
 ### Questions
@@ -300,8 +387,34 @@ The final checks will include `mvn verify` and manual playback testing.
   closing, while requestStop continues to discard queued work.
 - Added a test for writing, draining, closing, and rejecting submissions after input finishes.
 - Next, coordinate audio and video startup and bounded queues before connecting the session to the player.
-- Added an independent AudioDecoder that reads audio samples, copies them before the next grab, and preserves timestamps.
+- Added an independent AudioDecoder that reads audio samples, copies them before the next grab, and preserves
+  timestamps.
 - Connected audio preparation to PlaybackSession with shared clock.
-- Coordinated cancellation and termination across video, workers, and audio, and exposed audio failures through the session.
+- Coordinated cancellation and termination across video, workers, and audio, and exposed audio failures through the
+  session.
 - Registered the video pool for lifecycle handling before its first submission.
-- Next, integrate session lifecycle, playback controls, and audio output with the model while retaining both playback modes.
+- Next, integrate session lifecycle, playback controls, and audio output with the model while retaining both playback
+  modes.
+- Connected the PlaybackSession to a new MultithreadedVideoPlayerModel. The model polls prepared frames on the JavaFX
+  thread and displays them when they are due. Decoding, effect processing, and audio output run on background threads.
+- Kept the original VideoPlayerModel as a separate single-threaded playback mode. Both models implement PlaybackModel so
+  the controller can use the same playback controls and view callbacks. The multithreaded mode is selected by default,
+  while the single-threaded mode can be selected using COMP3011_PLAYBACK=single.
+- Added a lifecycle executor to manage starting and stopping playback sessions without waiting on the JavaFX thread. A
+  new session waits for the previous session to terminate before opening its resources.
+- Added generation checks when publishing sessions, frames, and errors. This prevents results from an old session being
+  displayed after a seek, stop, or new playback request. Obsolete startup requests are skipped before creating a new
+  session.
+- Connected play, pause, seek, rewind, replay, audio toggle, and shutdown to the multithreaded model. Seeking while
+  paused prepares one preview frame without resuming playback.
+- Preserved the first video read when pause and resume requests occur during startup. This allows the session to obtain
+  the metadata needed to complete a seek requested before the video has opened. Added a latch-based test for this
+  ordering.
+- Updated audio pause and resume so device operations are performed by the audio output thread. Audio completion now
+  waits for the Java Sound line buffer to empty while still checking for pause and stop requests.
+- Updated AudioPlayer to write whole audio frames, including during device warm-up. This is necessary when the number of
+  bytes available is not a multiple of the audio frame size.
+- Added playback-mode tests covering controls, paused preview, replay, completion, and callback thread ownership. Added
+  a comparison of displayed frames between the two modes.
+- Tested playback and controls locally. Titan played the lighter effect combinations in real time, but reported too many
+  missed frames for its heaviest combination. Further performance measurements and tuning are required.

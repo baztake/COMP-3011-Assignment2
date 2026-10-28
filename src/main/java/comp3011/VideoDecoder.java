@@ -130,6 +130,15 @@ public class VideoDecoder implements AutoCloseable {
     }
 
     /**
+     * Returns the opened media duration.
+     *
+     * @return media duration in microseconds, or a nonpositive value if unknown
+     */
+    public long durationUs() {
+        return grabber.getLengthInTime();
+    }
+
+    /**
      * Returns metadata captured from the first decoded video frame.
      *
      * @return video metadata, or null until a video frame has been decoded

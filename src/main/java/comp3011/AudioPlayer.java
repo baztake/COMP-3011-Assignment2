@@ -69,8 +69,13 @@ public class AudioPlayer implements AutoCloseable {
         // available. We return only the bytes we were able to write without overflowing the buffer, so the remaining
         // bytes can be tracked and written later. This avoids audio buffer blocking in a cooperative multitasking
         // architecture - i.e. we are being cooperative and not stalling the thread on line.write below!
+        int frameSize = line.getFormat().getFrameSize();
+        if (offset % frameSize != 0 || length % frameSize != 0) {
+            throw new IllegalArgumentException("Audio data must contain whole frames");
+        }
         int availableBeforeWrite = line.available();
         int byteCount = Math.min(length, availableBeforeWrite);
+        byteCount -= byteCount % frameSize;
         if (byteCount <= 0) {
             return 0;
         }
@@ -90,13 +95,30 @@ public class AudioPlayer implements AutoCloseable {
     }
 
     /**
-     * Waits for queued device audio to finish playing.
-     * Call on the device owner thread; this may block.
+     * Pauses the device while retaining buffered audio.
      */
-    public void drain() {
+    public void pause() {
         if (line != null) {
-            line.drain();
+            line.stop();
         }
+    }
+
+    /**
+     * Resumes the device after a pause.
+     */
+    public void resume() {
+        if (line != null) {
+            line.start();
+        }
+    }
+
+    /**
+     * Checks whether the Java Sound line buffer is empty.
+     *
+     * @return true if the line is closed or can accept its full buffer capacity
+     */
+    public boolean isBufferEmpty() {
+        return line == null || line.available() >= line.getBufferSize();
     }
 
     /**
@@ -127,7 +149,10 @@ public class AudioPlayer implements AutoCloseable {
      * Flushes remaining silence so it does not delay playback.
      */
     private void warmUpLine() {
-        byte[] silence = new byte[Math.min(AUDIO_WARMUP_BYTES, line.getBufferSize())]; // All zeros.
+        int frameSize = line.getFormat().getFrameSize();
+        int byteCount = Math.min(AUDIO_WARMUP_BYTES, line.getBufferSize());
+        byteCount -= byteCount % frameSize;
+        byte[] silence = new byte[byteCount]; // All zeros.
         line.write(silence, 0, silence.length); // May play, but harmless.
         line.flush(); // Get rid of the rest straight away, hopefully warm up is done.
     }

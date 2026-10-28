@@ -109,7 +109,7 @@ class AudioOutputTest {
     }
 
     /**
-     * Checks that finished input writes accepted audio and drains the device before closing.
+     * Checks that finished input writes accepted audio and waits for the line buffer to empty.
      *
      * @throws Exception if output startup or coordination fails
      */
@@ -121,6 +121,7 @@ class AudioOutputTest {
         AudioOutput output = new AudioOutput(new PlaybackClock(0, System.nanoTime()), 1);
         byte[] samples = {1, 2};
         when(player.write(samples, 0, 2)).thenReturn(2);
+        when(player.isBufferEmpty()).thenReturn(false, true);
 
         try {
             // Act
@@ -130,16 +131,72 @@ class AudioOutputTest {
             boolean terminated = output.awaitTermination(3, TimeUnit.SECONDS);
 
             // Assert
-            // Ensure accepted audio reaches the device before it is drained and closed.
+            // Ensure accepted audio reaches the device before its buffer is empty and closed.
             assertThat(terminated).isTrue();
             assertThat(output.getFailure()).isNull();
             InOrder calls = inOrder(player);
             calls.verify(player).open(48_000, 1);
             calls.verify(player).write(samples, 0, 2);
-            calls.verify(player).drain();
+            calls.verify(player, times(2)).isBufferEmpty();
             calls.verify(player).close();
             assertThatThrownBy(() -> output.enqueue(0, samples))
                 .isInstanceOf(RejectedExecutionException.class);
+        } finally {
+            output.requestStop();
+            output.awaitTermination(3, TimeUnit.SECONDS);
+        }
+    }
+
+
+    /**
+     * Checks that pause and resume are applied by the audio owner before writing resumes.
+     *
+     * @throws Exception if output startup or coordination fails
+     */
+    @Test
+    @Timeout(10)
+    void shouldPauseAndResumeDevice() throws Exception {
+        // Assemble
+        AudioPlayer player = mock(AudioPlayer.class);
+        PlaybackClock clock = new PlaybackClock(0, System.nanoTime());
+        clock.setPaused(true, System.nanoTime());
+        AudioOutput output = new AudioOutput(clock, 1);
+        CountDownLatch paused = new CountDownLatch(1);
+        CountDownLatch written = new CountDownLatch(1);
+        byte[] samples = {1, 2};
+        doAnswer(call -> {
+            paused.countDown();
+            return null;
+        }).when(player).pause();
+        when(player.write(samples, 0, 2)).thenAnswer(call -> {
+            written.countDown();
+            return 2;
+        });
+
+        try {
+            // Act
+            output.setPaused(true);
+            output.start(player, 48_000, 1);
+            output.enqueue(0, samples);
+            boolean devicePaused = paused.await(3, TimeUnit.SECONDS);
+            boolean wroteWhilePaused = written.getCount() == 0;
+            output.setPaused(false);
+            clock.setPaused(false, System.nanoTime());
+            boolean resumedWrite = written.await(3, TimeUnit.SECONDS);
+            output.requestStop();
+            boolean terminated = output.awaitTermination(3, TimeUnit.SECONDS);
+
+            // Assert
+            assertThat(devicePaused).isTrue();
+            assertThat(wroteWhilePaused).isFalse();
+            assertThat(resumedWrite).isTrue();
+            assertThat(terminated).isTrue();
+            InOrder calls = inOrder(player);
+            calls.verify(player).open(48_000, 1);
+            calls.verify(player).pause();
+            calls.verify(player).resume();
+            calls.verify(player).write(samples, 0, 2);
+            calls.verify(player).close();
         } finally {
             output.requestStop();
             output.awaitTermination(3, TimeUnit.SECONDS);
