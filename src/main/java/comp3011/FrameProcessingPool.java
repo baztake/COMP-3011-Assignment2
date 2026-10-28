@@ -121,6 +121,15 @@ public class FrameProcessingPool implements AutoCloseable {
     }
 
     /**
+     * Checks whether any submitted results remain in the queue.
+     *
+     * @return true if a queued result has not been polled
+     */
+    synchronized boolean hasPendingResults() {
+        return !results.isEmpty();
+    }
+
+    /**
      * Waits for the oldest submitted task without removing its result.
      * Call only from the startup thread before publishing the pool.
      * The monitor is released while the task runs.

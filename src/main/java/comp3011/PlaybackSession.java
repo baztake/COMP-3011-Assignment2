@@ -425,6 +425,29 @@ public class PlaybackSession {
     }
 
     /**
+     * Checks whether video results and audio output have finished.
+     * A result already polled by the caller is outside this check.
+     * The caller must display or discard its pending frame before finishing playback.
+     * Handle pollReady failures and inspect getFailure separately.
+     * Use awaitTermination to confirm all workers exited.
+     *
+     * @return true if no unpolled video results or unfinished audio remain, and no stop or failure is recorded
+     */
+    public boolean isDrained() {
+        if (stopRequested || getFailure() != null || !decoderFinished) {
+            return false;
+        }
+
+        FrameProcessingPool processingPool = ownedPool;
+        if (processingPool != null && processingPool.hasPendingResults()) {
+            return false;
+        }
+
+        AudioPreparation audio = audioPreparation;
+        return (audio == null || audio.isFinished()) && getFailure() == null && !stopRequested;
+    }
+
+    /**
      * Requests cancellation without waiting for decoder or worker termination.
      * Wakes admission waits, interrupts queue-space waits and cancels accepted pool work.
      * Native decoding may delay interruption; only the decoder thread closes it.

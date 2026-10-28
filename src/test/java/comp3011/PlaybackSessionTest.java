@@ -20,7 +20,7 @@ import static org.mockito.Mockito.*;
 class PlaybackSessionTest {
 
     /**
-     * Checks that the decoder thread processes a copied frame and preserves its metadata.
+     * Checks that the decoder processes a frame and completion waits for its result to be polled.
      *
      * @throws Exception if processing, result retrieval or cleanup fails
      */
@@ -52,16 +52,28 @@ class PlaybackSessionTest {
                 // Act
                 session.start(decoder, 0, false, 1, 1, 3);
 
+                // Wait for decoder EOF; the submitted result still occupies the queue.
+                while (!session.isDecoderFinished()) {
+                    Thread.sleep(1);
+                }
+                boolean drainedBeforePoll = session.isDrained();
+
                 // Wait for the result. The test timeout prevents an endless wait.
                 PreparedFrame result;
                 while ((result = session.pollReady()) == null) {
                     Thread.sleep(1);
                 }
 
+                boolean drainedAfterPoll = session.isDrained();
+
                 // EOF allows accepted work to finish without discarding results.
                 boolean terminated = session.awaitTermination(3, TimeUnit.SECONDS);
 
                 // Assert
+                // Ensure an unpolled result prevents completion.
+                assertThat(drainedBeforePoll).isFalse();
+                assertThat(drainedAfterPoll).isTrue();
+
                 // Ensure the selected effect ran and the frame identity was preserved.
                 assertThat(result.image().getPixelReader().getArgb(0, 0))
                     .isEqualTo(0xFF151515);
@@ -224,6 +236,8 @@ class PlaybackSessionTest {
         // Mocking one audio packet and a ready audio output.
         when(output.playbackClock()).thenReturn(clock);
         when(output.isReady()).thenReturn(true);
+        // Audio output finishes after the first completion check.
+        when(output.isTerminated()).thenReturn(false, true);
         when(output.awaitTermination(anyLong(), any(TimeUnit.class))).thenReturn(true);
         when(audioDecoder.hasAudio()).thenReturn(true);
         when(audioDecoder.sampleRate()).thenReturn(48_000);
@@ -240,9 +254,19 @@ class PlaybackSessionTest {
                 // Act
                 session.startWithAudio(video, audioDecoder, audio, 0, false, 1, 2, 3);
                 PreparedFrame first = awaitResult(session);
+                // Wait for both decoders to finish; output may still be draining.
+                while (!session.isDecoderFinished() || !audio.isDecoderFinished()) {
+                    Thread.sleep(1);
+                }
+                boolean drainedBeforeAudio = session.isDrained();
+                boolean drainedAfterAudio = session.isDrained();
                 boolean terminated = session.awaitTermination(3, TimeUnit.SECONDS);
 
                 // Assert
+                // Ensure playback waits for audio output to finish.
+                assertThat(drainedBeforeAudio).isFalse();
+                assertThat(drainedAfterAudio).isTrue();
+
                 // Ensure both streams were prepared and the shared clock kept their offset.
                 assertThat(first.info().timestampUs()).isEqualTo(200);
                 assertThat(session.isStartupReady()).isTrue();

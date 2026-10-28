@@ -225,6 +225,16 @@ public class AudioOutput {
     }
 
     /**
+     * Checks whether the output owner has exited after finishing or stopping.
+     * Does not establish successful device cleanup; inspect getFailure separately.
+     *
+     * @return true if output is closed and its owner has exited
+     */
+    public synchronized boolean isTerminated() {
+        return closed && (thread == null || !thread.isAlive());
+    }
+
+    /**
      * Waits for owner exit without holding the monitor.
      * Call from a lifecycle thread after stopping or finishing input, never JavaFX.
      * Device drain may block and may not respond promptly to interruption.

@@ -201,6 +201,17 @@ public class AudioPreparation {
     }
 
     /**
+     * Checks whether audio decoding and output have finished.
+     * If there was no audio, no output thread needed to start.
+     * Inspect getFailure separately and use awaitTermination to confirm decoder exit.
+     *
+     * @return true after decoder cleanup and audio output termination
+     */
+    public boolean isFinished() {
+        return decoderFinished && (!audioAvailable || output.isTerminated());
+    }
+
+    /**
      * Waits for both audio owners using one shared timeout budget.
      * Call from a lifecycle thread, never JavaFX or either audio owner.
      * Paused playback must resume to finish queued audio gracefully.
