@@ -15,6 +15,8 @@ import java.util.concurrent.TimeUnit;
  * The queue includes the packet being written until all its bytes are accepted.
  * The monitor protects the queue and lifecycle, device calls happen outside it.
  * Clock pause is checked between writes, an admitted write and buffered audio may continue.
+ * Finished input drains accepted packets; stop discards queued packets.
+ * A selected or in-progress device drain may continue after stop.
  */
 public class AudioOutput {
 
@@ -25,6 +27,8 @@ public class AudioOutput {
     // Accessed under the monitor; never join while holding it.
     private Thread thread;
     private volatile boolean closed;
+    // Protected by the monitor; prevents submissions after end of input.
+    private boolean inputFinished;
     /**
      * -- GETTER --
      *
@@ -81,12 +85,14 @@ public class AudioOutput {
      *
      * @param timestampUs packet media timestamp in microseconds
      * @param samples     copied bytes containing complete interleaved audio frames
-     * @throws InterruptedException if interrupted while waiting for capacity
+     * @throws NullPointerException       if samples is null
+     * @throws RejectedExecutionException if output has not started or no longer accepts input
+     * @throws InterruptedException       if interrupted while waiting for capacity
      */
     public synchronized void enqueue(long timestampUs, @NonNull byte[] samples) throws InterruptedException {
         if (thread == null) throw new RejectedExecutionException("Audio output has not started");
-        while (!closed && packets.size() >= capacity) wait();
-        if (closed) throw new RejectedExecutionException("Audio output is closed");
+        while (!closed && !inputFinished && packets.size() >= capacity) wait();
+        if (closed || inputFinished) throw new RejectedExecutionException("Audio output no longer accepts input");
         packets.add(new Packet(timestampUs, samples));
         notifyAll();
     }
@@ -117,6 +123,16 @@ public class AudioOutput {
                     }
                 }
             }
+
+            // Queue empty means bytes were accepted, not necessarily played.
+            // Drain on the owner before close flushes the device.
+            boolean drain;
+            synchronized (this) {
+                drain = inputFinished && !closed;
+            }
+            if (drain) {
+                player.drain();
+            }
         } catch (InterruptedException interrupted) {
             if (!closed || interrupted.getSuppressed().length > 0) failure = interrupted;
             Thread.currentThread().interrupt();
@@ -135,11 +151,11 @@ public class AudioOutput {
     /**
      * Waits for the head without releasing its capacity.
      *
-     * @return oldest packet, or null when stopped
+     * @return oldest packet, or null when stopped or input has finished and the queue is empty
      * @throws InterruptedException if interrupted while waiting
      */
     private synchronized Packet awaitPacket() throws InterruptedException {
-        while (packets.isEmpty() && !closed) wait();
+        while (packets.isEmpty() && !closed && !inputFinished) wait();
         return closed ? null : packets.peek();
     }
 
@@ -173,8 +189,23 @@ public class AudioOutput {
     }
 
     /**
+     * Rejects new input and lets accepted packets finish in order.
+     * The owner drains queued device audio before closing.
+     * Does not wait for completion; device draining may delay stopping.
+     * A stop request discards packets that have not been written.
+     *
+     * @throws IllegalStateException if output has not started
+     */
+    public synchronized void finishInput() {
+        if (thread == null) throw new IllegalStateException("Audio output has not started");
+        inputFinished = true;
+        notifyAll();
+    }
+
+    /**
      * Rejects input, discards queued packets and interrupts the owner.
      * Device closure remains the owner thread's responsibility.
+     * A selected or in-progress device drain may delay closure.
      */
     public synchronized void requestStop() {
         closed = true;
@@ -186,12 +217,15 @@ public class AudioOutput {
 
     /**
      * Waits for owner exit without holding the monitor.
-     * Call from a lifecycle thread after stopping, never JavaFX.
+     * Call from a lifecycle thread after stopping or finishing input, never JavaFX.
+     * Device drain may block and may not respond promptly to interruption.
      *
      * @param timeout maximum wait; nonpositive values only check status
      * @param unit    timeout unit
      * @return true if the owner exited, otherwise false
-     * @throws InterruptedException if the caller is interrupted
+     * @throws NullPointerException  if unit is null
+     * @throws IllegalStateException if called by the audio owner thread
+     * @throws InterruptedException  if the caller is interrupted
      */
     public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
         long nanos = Math.max(0L, unit.toNanos(timeout));

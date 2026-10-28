@@ -284,15 +284,19 @@ The final checks will include `mvn verify` and manual playback testing.
   resume before reading another frame.
 - Protected pause and preview state with the session monitor. Resume and stop wake the waiting decoder, native reads and
   pool submission stay outside the critical region. Already admitted work may finish after pausing.
-- Updated session startup calls and added a focused test checking one paused preview, admission waiting and resume.
+- Updated session startup calls and added a focused test checking one paused preview, admission waiting, and resume.
 - Next, I will separate audio sample copying from audio-device access before adding the audio thread.
 - Extracted audio sample conversion into AudioSampleCopier, separating it from AudioPlayer's device access.
 - Documented that each decoder must own its copier and the audio-output thread must own device access.
 - Next, I will add audio output ownership on a dedicated thread with a bounded queue of copied, timestamped PCM packets.
 - Added AudioOutput with a bounded FIFO of copied, timestamped PCM packets and a dedicated audio-device owner thread.
-- Kept active packets in the queue until fully written, handling partial writes and waking blocked producers on stop.
+- Kept active packets in the queue until fully written, handling partial writes, and waking blocked producers on stop.
 - Added focused tests for partial writes and cancellation.
-- Next, integrate audio decoding and output with playback timing, controls and lifecycle handling.
+- Next, integrate audio decoding and output with playback timing, controls, and lifecycle handling.
 - Added mixed audio and video reading to VideoDecoder while preserving the existing video-only session path.
 - Added a test for audio followed by the first video frame and end of media.
 - Next, connect copied audio packets to AudioOutput and coordinate startup with the shared playback clock.
+- Now gracefully handles end of audio files. The audio owner writes accepted packets and drains device audio before
+  closing, while requestStop continues to discard queued work.
+- Added a test for writing, draining, closing, and rejecting submissions after input finishes.
+- Next, coordinate audio and video startup and bounded queues before connecting the session to the player.

@@ -11,6 +11,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class AudioOutputTest {
@@ -106,4 +107,43 @@ class AudioOutputTest {
             output.awaitTermination(3, TimeUnit.SECONDS);
         }
     }
+
+    /**
+     * Checks that finished input writes accepted audio and drains the device before closing.
+     *
+     * @throws Exception if output startup or coordination fails
+     */
+    @Test
+    @Timeout(10)
+    void shouldDrainAcceptedAudioWhenInputFinishes() throws Exception {
+        // Assemble
+        AudioPlayer player = mock(AudioPlayer.class);
+        AudioOutput output = new AudioOutput(new PlaybackClock(0, System.nanoTime()), 1);
+        byte[] samples = {1, 2};
+        when(player.write(samples, 0, 2)).thenReturn(2);
+
+        try {
+            // Act
+            output.start(player, 48_000, 1);
+            output.enqueue(0, samples);
+            output.finishInput();
+            boolean terminated = output.awaitTermination(3, TimeUnit.SECONDS);
+
+            // Assert
+            // Ensure accepted audio reaches the device before it is drained and closed.
+            assertThat(terminated).isTrue();
+            assertThat(output.getFailure()).isNull();
+            InOrder calls = inOrder(player);
+            calls.verify(player).open(48_000, 1);
+            calls.verify(player).write(samples, 0, 2);
+            calls.verify(player).drain();
+            calls.verify(player).close();
+            assertThatThrownBy(() -> output.enqueue(0, samples))
+                .isInstanceOf(RejectedExecutionException.class);
+        } finally {
+            output.requestStop();
+            output.awaitTermination(3, TimeUnit.SECONDS);
+        }
+    }
+
 }

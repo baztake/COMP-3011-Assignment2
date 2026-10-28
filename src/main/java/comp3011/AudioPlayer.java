@@ -90,6 +90,16 @@ public class AudioPlayer implements AutoCloseable {
     }
 
     /**
+     * Waits for queued device audio to finish playing.
+     * Call on the device owner thread; this may block.
+     */
+    public void drain() {
+        if (line != null) {
+            line.drain();
+        }
+    }
+
+    /**
      * Discards audio queued in the device, if output is open.
      */
     public void flush() {
