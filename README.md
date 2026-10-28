@@ -186,8 +186,9 @@ After close or requestStop has returned, a lifecycle thread can call awaitTermin
 must not wait for termination. A cancelled future does not establish that its worker has exited or input clean-up has
 finished.
 
-PlaybackSession integration is still planned. It must coordinate decoder and audio shutdown, clear the pending
-presentation frame, and reject stale frame, metadata, and status callbacks after seek or stop.
+PlaybackSession configures bounded pools using the selected effects. Each processing thread creates its own initialised
+worker on first use through the pool’s ThreadLocal factory. Processor initialisation failures are reported through the
+submitted frame’s future.
 
 #### Testing and Performance
 
@@ -265,3 +266,8 @@ The final checks will include `mvn verify` and manual playback testing.
   initialised processor chains.
 - Added a basic test checking selected processing and initialisation. The model still uses its existing construction
   path until session integration replaces it.
+- Connected PlaybackSession worker creation to FrameProcessingPool. Each processing thread creates its own initialised
+  processor chain on first use.
+- Updated the session test to process a frame through the pool, checking the selected effect, frame information and
+  playback generation.
+- Next, I will connect the decoder to the pool, copying decoded frames before submission.

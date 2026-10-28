@@ -10,7 +10,7 @@ import java.util.Map;
 
 /**
  * Holds effect selections for one playback session.
- * Creates private processor chains before workers begin processing.
+ * Creates bounded pools with worker-private processor chains.
  * Decoder and playback lifecycle integration will be added separately.
  */
 public class PlaybackSession {
@@ -27,6 +27,29 @@ public class PlaybackSession {
     }
 
     /**
+     * Creates a bounded pool using this session's selected effects.
+     * Each processing thread creates and initialises its own worker on first use.
+     * The caller owns pool shutdown and termination waiting.
+     *
+     * @param workerCount     number of processing threads
+     * @param maxQueuedFrames maximum number of accepted, unpolled frames
+     * @param videoInfo       metadata obtained from the decoded video
+     * @return pool configured to create private, initialised workers
+     * @throws IllegalArgumentException if workerCount or maxQueuedFrames is not positive
+     */
+    FrameProcessingPool createPool(int workerCount, int maxQueuedFrames, InfoVideo videoInfo) {
+        return new FrameProcessingPool(workerCount, maxQueuedFrames, () -> {
+            try {
+                return createWorker(videoInfo);
+            } catch (Exception failure) {
+                // Supplier cannot throw checked exceptions.
+                // The pool reports this failure through the submitted frame's future.
+                throw new IllegalStateException("Could not initialise frame processing worker", failure);
+            }
+        });
+    }
+
+    /**
      * Creates a worker with a fresh, initialised processor chain.
      * Local occurrence counts preserve equivalent seeds across workers.
      *
@@ -34,7 +57,7 @@ public class PlaybackSession {
      * @return worker owning the newly created processors
      * @throws Exception if processor initialisation fails
      */
-    FrameProcessingWorker createWorker(InfoVideo videoInfo) throws Exception {
+    private FrameProcessingWorker createWorker(InfoVideo videoInfo) throws Exception {
         Map<FrameEffect, Integer> occurrenceCounts = new EnumMap<>(FrameEffect.class);
         List<FrameProcessor> processors = new ArrayList<>();
 
