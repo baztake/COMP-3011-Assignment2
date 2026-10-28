@@ -261,5 +261,7 @@ The final checks will include `mvn verify` and manual playback testing.
 - Added an explicit paused-preview flag so seeking while paused displays one frame without resuming playback.
 - Replaced the model's private PreparedFrame with the shared result record used by processing workers. Preparation
   timestamps are supplied explicitly by producers.
-- Logical seek positions and saved preparation headroom remain model-owned, keeping playback responsibilities separate
-  from frame processing. Updated existing pool test fixtures for the shared record.
+- Added the initial PlaybackSession composition code. It stores selected effects and creates workers with fresh,
+  initialised processor chains.
+- Added a basic test checking selected processing and initialisation. The model still uses its existing construction
+  path until session integration replaces it.
