@@ -300,3 +300,4 @@ The final checks will include `mvn verify` and manual playback testing.
   closing, while requestStop continues to discard queued work.
 - Added a test for writing, draining, closing, and rejecting submissions after input finishes.
 - Next, coordinate audio and video startup and bounded queues before connecting the session to the player.
+- Added an independent AudioDecoder that reads audio samples, copies them before the next grab and preserves timestamps.
