@@ -19,7 +19,7 @@ public class PlaybackClock {
      * Starts the clock from the first decoded video timestamp.
      *
      * @param firstTimestampUs first decoded video timestamp in microseconds
-     * @param playbackStartNs corresponding monotonic time in nanoseconds
+     * @param playbackStartNs  corresponding monotonic time in nanoseconds
      */
     public PlaybackClock(long firstTimestampUs, long playbackStartNs) {
         this.firstTimestampUs = firstTimestampUs;
@@ -31,7 +31,7 @@ public class PlaybackClock {
      * Repeating the current state leaves timing unchanged.
      *
      * @param paused whether playback should be paused
-     * @param nowNs current monotonic time in nanoseconds
+     * @param nowNs  current monotonic time in nanoseconds
      */
     public synchronized void setPaused(boolean paused, long nowNs) {
         if (this.paused == paused) {
@@ -56,8 +56,7 @@ public class PlaybackClock {
      * @return monotonic display deadline in nanoseconds
      */
     public synchronized long targetTimeNs(long timestampUs) {
-        return playbackStartNs
-                + relativeTimestampUs(timestampUs) * 1_000L;
+        return playbackStartNs + relativeTimestampUs(timestampUs) * 1_000L;
     }
 
     /**
@@ -65,7 +64,7 @@ public class PlaybackClock {
      * Paused preview presentation is controlled separately by the model.
      *
      * @param timestampUs frame media timestamp in microseconds
-     * @param nowNs current monotonic time in nanoseconds
+     * @param nowNs       current monotonic time in nanoseconds
      * @return true if running and the deadline has been reached
      */
     public synchronized boolean isDue(long timestampUs, long nowNs) {
@@ -80,8 +79,7 @@ public class PlaybackClock {
      */
     public synchronized long mediaTimestampUs(long nowNs) {
         long effectiveNowNs = paused ? pauseStartedNs : nowNs;
-        return firstTimestampUs
-                + (effectiveNowNs - playbackStartNs) / 1_000L;
+        return firstTimestampUs + (effectiveNowNs - playbackStartNs) / 1_000L;
     }
 
     /**

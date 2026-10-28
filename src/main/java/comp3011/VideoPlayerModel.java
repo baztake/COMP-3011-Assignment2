@@ -13,6 +13,7 @@ package comp3011;
 import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
 import javafx.scene.image.Image;
+import lombok.Getter;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.FrameGrabber;
@@ -37,7 +38,7 @@ import java.util.function.Consumer;
 public class VideoPlayerModel {
     private static final long NO_SEEK_REQUEST = -1; // Sentinel value used when no seek position is active.
     private static final long FIVE_SECONDS_US = 5_000_000L;
-    private static final long AUDIO_LEAD_NS = 30_000_000L;
+    private static final long AUDIO_LEAD_NS = 0L;
 
     private final List<FrameProcessor> frameProcessors;
     private final Queue<PendingAudio> pendingAudio = new ArrayDeque<>();
@@ -70,6 +71,7 @@ public class VideoPlayerModel {
     private boolean prepareNextFrameQueued; // True only when the event loop needs to call our prepareNextFrame method.
     private boolean playbackOpen; // True when playback is happening.
     private boolean pauseRequested;
+    @Getter
     private boolean audioOutputEnabled;
     private boolean audioAvailable;
     private boolean frameProcessorsInitialised;
@@ -79,10 +81,9 @@ public class VideoPlayerModel {
     private double frameRate;
     private int intFrameRate;
     private int totalVideoFrames;
-    private long firstTimestampUs = NO_SEEK_REQUEST;
+    private PlaybackClock playbackClock;
+    private boolean previewRequested;
     private long logicalPlaybackBaseUs;
-    private long playbackStartNs;
-    private long pauseStartedNs;
     private long relativeSeekBaseUs = NO_SEEK_REQUEST;
 
     public VideoPlayerModel(
@@ -147,6 +148,10 @@ public class VideoPlayerModel {
         seekRelative(FIVE_SECONDS_US);
     }
 
+    /**
+     * Toggles playback pause and updates the active clock.
+     * Resumes playback from the current position if playback has finished.
+     */
     public void togglePause() {
         if (!playbackOpen) {
             if (videoFile != null) {
@@ -158,11 +163,11 @@ public class VideoPlayerModel {
         pauseRequested = !pauseRequested;
         relativeSeekBaseUs = NO_SEEK_REQUEST;
 
+        if (playbackClock != null) {
+            playbackClock.setPaused(pauseRequested, System.nanoTime());
+        }
         if (pauseRequested) {
-            pauseStartedNs = System.nanoTime();
             flushAudioOutput();
-        } else {
-            resumePlaybackClock(System.nanoTime());
         }
 
         notifyPlaybackStateChanged();
@@ -173,10 +178,6 @@ public class VideoPlayerModel {
         pendingAudio.clear();
         flushAudioOutput();
         notifyAudioOutputStateChanged();
-    }
-
-    public boolean isAudioOutputEnabled() {
-        return audioOutputEnabled;
     }
 
     public void stopPlayback() {
@@ -278,22 +279,21 @@ public class VideoPlayerModel {
         }
     }
 
+    /**
+     * Clears pending output and resets timing for a new logical position.
+     * A new clock is created when the first video frame is decoded.
+     *
+     * @param logicalTimestampUs logical playback position in microseconds
+     */
     private void resetPlaybackClock(long logicalTimestampUs) {
         pendingAudio.clear();
         preparedFrame = null;
         currentTimestampUs = logicalTimestampUs;
         relativeSeekBaseUs = logicalTimestampUs;
-        firstTimestampUs = NO_SEEK_REQUEST;
+        playbackClock = null;
         logicalPlaybackBaseUs = logicalTimestampUs;
-        playbackStartNs = 0;
-        pauseStartedNs = pauseRequested ? System.nanoTime() : 0;
-    }
-
-    private void resumePlaybackClock(long now) {
-        if (pauseStartedNs > 0 && playbackStartNs > 0) {
-            playbackStartNs += now - pauseStartedNs;
-        }
-        pauseStartedNs = 0;
+        // A paused seek prepares one preview without resuming ordinary playback.
+        previewRequested = pauseRequested;
     }
 
     private void prepareNextFrame() {
@@ -308,6 +308,12 @@ public class VideoPlayerModel {
         }
     }
 
+    /**
+     * Decodes and processes the next video frame using the active clock.
+     *
+     * @return prepared frame, or null if playback has ended
+     * @throws Exception if decoding, initialisation or processing fails
+     */
     private PreparedFrame readNextVideoFrame() throws Exception {
         while (playbackOpen) {
             Frame frame = grabFrame();
@@ -341,12 +347,10 @@ public class VideoPlayerModel {
                 frameProcessorsInitialised = true;
             }
 
-            if (firstTimestampUs == NO_SEEK_REQUEST) {
-                firstTimestampUs = timestampUs;
-                playbackStartNs = System.nanoTime();
-                if (pauseRequested) {
-                    pauseStartedNs = playbackStartNs;
-                }
+            if (playbackClock == null) {
+                long nowNs = System.nanoTime();
+                playbackClock = new PlaybackClock(timestampUs, nowNs);
+                playbackClock.setPaused(pauseRequested, nowNs);
             }
 
             int frameNumber = grabber.getFrameNumber();
@@ -354,17 +358,21 @@ public class VideoPlayerModel {
             processFrame(frame, info);
 
             Image image = converter.convert(frame);
-            long relativeTimestampUs = Math.max(0, timestampUs - firstTimestampUs);
+            long relativeTimestampUs = playbackClock.relativeTimestampUs(timestampUs);
             long logicalTimestampUs = logicalPlaybackBaseUs + relativeTimestampUs;
-            long targetTimeNs = playbackStartNs + relativeTimestampUs * 1_000L;
+
+            long preparedAtNs = System.nanoTime();
+            // Capture preparation headroom now so later pauses cannot inflate it.
+            long preparationHeadroomUs = (playbackClock.targetTimeNs(timestampUs) - preparedAtNs) / 1_000L;
 
             return new PreparedFrame(
                 image,
                 frameNumber,
                 timestampUs,
                 logicalTimestampUs,
-                targetTimeNs,
-                System.nanoTime());
+                preparationHeadroomUs,
+                preparedAtNs
+            );
         }
 
         return null;
@@ -376,6 +384,12 @@ public class VideoPlayerModel {
     // (2) display a frame if it is due and (3) prepare the next frame if we're in the window after the previous frame
     // has gone to the display. We don't buffer frames here, just handling them one at a time. Not a great architecture,
     // living on the edge a bit, but can't do much better on a single thread.
+
+    /**
+     * Updates audio and presents a due frame or an explicitly requested preview.
+     *
+     * @param now monotonic JavaFX pulse time in nanoseconds
+     */
     private void pumpPlayback(long now) {
         if (!playbackOpen) {
             return;
@@ -385,7 +399,7 @@ public class VideoPlayerModel {
         writeDueAudio(now);
 
         // Task (2)
-        if (preparedFrame != null && preparedFrame.targetTimeNs() <= now) {
+        if (preparedFrame != null && (previewRequested || playbackClock.isDue(preparedFrame.mediaTimestampUs(), now))) {
             // We have a prepared frame ready to go and it is due (or just past due!) so get it up on screen ASAP!
             displayPreparedFrame(now);
         }
@@ -407,15 +421,21 @@ public class VideoPlayerModel {
         }
     }
 
+    /**
+     * Presents the pending image and reports its saved preparation headroom.
+     *
+     * @param now monotonic JavaFX pulse time in nanoseconds
+     */
     private void displayPreparedFrame(long now) {
         PreparedFrame frame = preparedFrame;
         preparedFrame = null;
+        previewRequested = false;
         currentTimestampUs = frame.logicalTimestampUs();
         relativeSeekBaseUs = NO_SEEK_REQUEST;
 
         // Dump some logging to the console once per second so that real time performance can be monitored.
         if (intFrameRate > 0 && frame.frameNumber() % intFrameRate == 0) {
-            long remainingUs = (frame.targetTimeNs() - frame.preparedAtNs()) / 1_000L;
+            long remainingUs = frame.preparationHeadroomUs();
             if (remainingUs < 0) {
                 System.out.printf("Frame headroom is \u001B[31m%5dus\u001B[0m out of %dus spare.%n",
                     remainingUs,
@@ -441,18 +461,23 @@ public class VideoPlayerModel {
         }
     }
 
+    /**
+     * Writes queued audio due within the existing audio lead interval.
+     *
+     * @param now monotonic JavaFX pulse time in nanoseconds
+     */
     private void writeDueAudio(long now) {
         // Handle some obvious early exits
         if (!audioOutputEnabled || audioPlayer == null) {
             pendingAudio.clear();
             return;
         }
-        if (pauseRequested || firstTimestampUs == NO_SEEK_REQUEST || playbackStartNs <= 0) {
+        if (pauseRequested || playbackClock == null) {
             return;
         }
 
         // Here is the real time dependent logic
-        long dueTimestampUs = firstTimestampUs + (now + AUDIO_LEAD_NS - playbackStartNs) / 1_000L;
+        long dueTimestampUs = playbackClock.mediaTimestampUs(now + AUDIO_LEAD_NS);
         while (!pendingAudio.isEmpty()) {
             PendingAudio audio = pendingAudio.peek();
             if (audio.timestampUs() > dueTimestampUs) {
@@ -473,9 +498,7 @@ public class VideoPlayerModel {
     }
 
     private void finishPlayback() {
-        long endTimestampUs = videoDurationUs != NO_SEEK_REQUEST
-            ? videoDurationUs
-            : currentTimestampUs;
+        long endTimestampUs = videoDurationUs != NO_SEEK_REQUEST ? videoDurationUs : currentTimestampUs;
 
         closePlaybackResources();
         pauseRequested = true;
@@ -493,14 +516,17 @@ public class VideoPlayerModel {
         notifyPlaybackStateChanged();
     }
 
+    /**
+     * Stops playback and releases decoder and audio resources.
+     * Discards the clock and any outstanding preview request.
+     */
     private void closePlaybackResources() {
         playbackTimer.stop();
         playbackOpen = false;
         preparedFrame = null;
         pendingAudio.clear();
-        firstTimestampUs = NO_SEEK_REQUEST;
-        playbackStartNs = 0;
-        pauseStartedNs = 0;
+        playbackClock = null;
+        previewRequested = false;
         audioAvailable = false;
         frameProcessorsInitialised = false;
 
@@ -606,12 +632,22 @@ public class VideoPlayerModel {
         audioOutputStateChangedHandler.accept(audioOutputEnabled);
     }
 
+    /**
+     * Holds a prepared image without a cached presentation deadline.
+     *
+     * @param image                 processed display image
+     * @param frameNumber           decoded frame number
+     * @param mediaTimestampUs      original media timestamp in microseconds
+     * @param logicalTimestampUs    logical seek-relative position in microseconds
+     * @param preparationHeadroomUs deadline minus preparation time, captured during preparation
+     * @param preparedAtNs          monotonic preparation completion time in nanoseconds
+     */
     private record PreparedFrame(
         Image image,
         int frameNumber,
         long mediaTimestampUs,
         long logicalTimestampUs,
-        long targetTimeNs,
+        long preparationHeadroomUs,
         long preparedAtNs) {
     }
 

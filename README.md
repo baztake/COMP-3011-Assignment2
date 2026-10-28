@@ -255,3 +255,7 @@ The final checks will include `mvn verify` and manual playback testing.
 - Defined dependency versions, fixed logging
 - Added the PlaybackClock to support synchronised presentation and audio timing. Supports pausing and resuming, and a
   test to verify functionality.
+- Next, integrate the playback clock into the video player model to synchronise presentation and audio timing.
+- Connected PlaybackClock to the model's frame scheduling, pause/resume and audio timing, removing the duplicated timing
+  fields and resume calculation. Logical seek positions remain owned by the model.
+- Added an explicit paused-preview flag so seeking while paused displays one frame without resuming playback.
