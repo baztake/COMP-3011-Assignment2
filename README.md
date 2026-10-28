@@ -91,33 +91,35 @@ selected effect chain to its frame. Effects on one frame remain sequential, diff
 The existing controller will continue to translate GUI events into model requests. The model will own playback state and
 delegate background preparation rather than doing the expensive work itself.
 
-| Component             | Responsibility                                                                                                          | Main operations                                                                                    |
-|-----------------------|-------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
-| `VideoPlayerModel`    | Receive controller requests, own visible playback state, poll results and present images on JavaFX                      | Existing play/pause/seek/stop methods                                                              |
-| `PlaybackSession`     | Own one playback run from a particular start position, including decoder, processing pool, clock and audio output       | `start()`, `configure(...)`, `requestStop()`, `awaitTermination(...)`, completion/error inspection |
-| `FrameProcessingPool` | Submit bounded frame work, maintain worker-private state, expose results in submission order and release cancelled work | Admission/submission, `pollReady()`, retirement, cancellation and termination                      |
-| `PlaybackClock`       | Provide a common media-time origin and consistent pause/resume timing                                                   | `start(...)`, `setPaused(...)`, `isDue(...)`, deadline calculation                                 |
-| `AudioOutput`         | Own the audio device, consume copied PCM samples and apply audio controls                                               | Enqueue samples, configure state, stop and inspect drain/termination state                         |
+| Component             | Responsibility                                                                                                    | Main operations                                                                                    |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
+| `VideoPlayerModel`    | Receive controller requests, own visible playback state, poll results and present images on JavaFX                | Existing play/pause/seek/stop methods                                                              |
+| `PlaybackSession`     | Own one playback run from a particular start position, including decoder, processing pool, clock and audio output | `start()`, `configure(...)`, `requestStop()`, `awaitTermination(...)`, completion/error inspection |
+| `FrameProcessingPool` | Submit bounded frame work, preserve result order and manage input cleanup                                         | `submit()`, `pollReady()`, `close()`, `requestStop()`, `awaitTermination(...)`                     |
+| `PlaybackClock`       | Provide a common media-time origin and consistent pause/resume timing                                             | `start(...)`, `setPaused(...)`, `isDue(...)`, deadline calculation                                 |
+| `AudioOutput`         | Own the audio device, consume copied PCM samples and apply audio controls                                         | Enqueue samples, configure state, stop and inspect drain/termination state                         |
 
 #### Threading Model and Ownership
 
 The following table will be used to define where synchronisation is required, and where ownership eliminates it.
 
-| Resource/state                                                    | Owner                                                           | Communication/protection                                                  |
-|-------------------------------------------------------------------|-----------------------------------------------------------------|---------------------------------------------------------------------------|
-| Grabber, decoder position and borrowed decode buffers             | Decoder thread                                                  | Other threads never call its decode, seek or close methods                |
-| A copied input frame                                              | Decoder before submission, one processing task after acceptance | Explicit ownership transfer and exactly-once release                      |
-| Effect chain, scratch arrays and conversion working state         | Individual processing worker                                    | Private worker state, never shared with another worker                    |
-| Presented image, logical seek position and visible playback state | JavaFX thread                                                   | Background work publishes results, GUI execute on JavaFX                  |
-| Audio device and partially written output chunk                   | Audio thread                                                    | Copied sample packets and published control state                         |
-| Playback clock                                                    | JavaFX and audio thread                                         | Small synchronized methods covering complete timing decisions             |
-| Current generation ID                                             | Written by JavaFX, read by lifecycle work                       | volatile `long`, JavaFX increments it                                     |
-| Ordered result tickets                                            | Decoder producer and JavaFX consumer                            | Thread-safe FIFO queue, short coordination for submission versus shutdown |
-| Outstanding-frame capacity                                        | Decoder admission and retirement/cancellation paths             | Semaphore permits with exactly-once release                               |
-| Session startup/teardown                                          | Single lifecycle executor                                       | Ordered lifecycle operations, with no GUI-thread waits                    |
+| Resource/state                                                    | Owner                                                           | Communication/protection                                        |
+|-------------------------------------------------------------------|-----------------------------------------------------------------|-----------------------------------------------------------------|
+| Grabber, decoder position and borrowed decode buffers             | Decoder thread                                                  | Other threads never call its decode, seek or close methods      |
+| A copied input frame                                              | Decoder before submission, one processing task after acceptance | Transfer on accepted submission; exactly one cleanup owner      |
+| Effect chain, scratch arrays and conversion working state         | Individual processing worker                                    | Private worker state, never shared with another worker          |
+| Presented image, logical seek position and visible playback state | JavaFX thread                                                   | Background work publishes results, GUI execute on JavaFX        |
+| Audio device and partially written output chunk                   | Audio thread                                                    | Copied sample packets and published control state               |
+| Playback clock                                                    | JavaFX and audio thread                                         | Small synchronized methods covering complete timing decisions   |
+| Current generation ID                                             | Written by JavaFX, read by lifecycle work                       | volatile `long`, JavaFX increments it                           |
+| Ordered result futures                                            | Decoder submits, JavaFX polls                                   | FIFO queue protected by the pool monitor                        |
+| Result queue capacity                                             | Decoder submission and JavaFX polling                           | Pool monitor protects queue size and coordinates wait/notifyAll |
+| Session startup/teardown                                          | Single lifecycle executor                                       | Ordered lifecycle operations, with no GUI-thread waits          |
 
-The fixed executor limits the number of processing workers. The semaphore limits outstanding frames (queued jobs,
-running jobs, completed results, and the next frame waiting for presentation)
+The executor limits processing workers and the result queue limits accepted, unpolled submissions to N futures. This
+includes queued, running, and completed tasks. During integration, JavaFX must poll only when its single preparedFrame
+slot is empty, giving N unpolled submissions plus one pending presentation frame. The currently displayed image, a
+copied input held by a waiting decoder, and audio buffers are additional allocations outside this bound.
 
 #### Passing Frames Between Threads
 
@@ -138,8 +140,10 @@ effect occurrence across workers, so the output does not depend on which worker 
 Frames can finish processing out of order, so their results are kept in submission order. The GUI only checks the next
 expected frame and displays it when it is ready and its timestamp is due. It never waits for an unfinished task.
 
-A semaphore limits the number of outstanding frames, initially set to twice the worker count. A slot is released when a
-frame is displayed or discarded. This prevents decoding from getting too far ahead and using excessive memory.
+The result queue uses a configurable capacity, initially planned as twice the worker count. A full queue makes the
+decoder wait on the pool monitor. Waiting releases the monitor so polling and shutdown can proceed. The condition is
+checked in a loop after waking. Removing a completed or failed head frees a slot and notifies waiting submitters. A
+frame finishing processing alone does not free its slot.
 
 This preserves the required ordering while allowing independent work to overlap.
 
@@ -168,9 +172,22 @@ workers happen elsewhere, keeping the interface responsive.
 Each new playback session has a generation number. Results from an older generation are ignored, preventing an old frame
 from appearing after a seek or stop.
 
-Session cleanup runs outside the GUI thread. Cancellation interrupts blocked workers, and copied frames are released
-whether their tasks finish or are cancelled. Any background failure is reported to the GUI and stops the affected
-session.
+The pool has two shutdown paths. close () rejects new submissions but lets accepted tasks finish and keeps their results
+available for polling. requestStop () interrupts workers, cancels accepted tasks, and discards queued results. Both wake
+submitters waiting for space. A rejected or interrupted submission leaves input ownership with its caller.
+
+FrameTask uses an atomic claim to select who closes each accepted input. If queued cancellation claims first, it closes
+the input without running processors. If execution claims first, its final clean-up closes the input after processing
+exits. This prevents double release and cancellation closing native input still in use. Failed close attempts are logged
+without preventing remaining cancellation; logging does not guarantee that clean-up succeeded.
+
+Worker interruption checks run before effects and before conversion. An effect already executing may delay stopping.
+After close or requestStop has returned, a lifecycle thread can call awaitTermination to confirm worker exit. JavaFX
+must not wait for termination. A cancelled future does not establish that its worker has exited or input clean-up has
+finished.
+
+PlaybackSession integration is still planned. It must coordinate decoder and audio shutdown, clear the pending
+presentation frame, and reject stale frame, metadata, and status callbacks after seek or stop.
 
 #### Testing and Performance
 
@@ -234,3 +251,4 @@ The final checks will include `mvn verify` and manual playback testing.
 - Added awaitTermination to report worker termination
 - Added a test to verify that requestStop cancels queued work and releases accepted input frames, and that
   awaitTermination confirms the workers have stopped.
+- Updated the planning notes to match the implemented queue limit, shutdown methods, and frame-input ownership.
