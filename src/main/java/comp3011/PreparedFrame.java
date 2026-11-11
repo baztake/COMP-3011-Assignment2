@@ -1,5 +1,5 @@
 /*
- * Frame-result contract prepared with assistance from OpenAI Codex.
+ * Frame-result contract prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex.
  */
 package comp3011;
 

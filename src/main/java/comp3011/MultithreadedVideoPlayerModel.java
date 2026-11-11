@@ -24,6 +24,7 @@ import java.util.function.Consumer;
  * Generation checks prevent obsolete sessions publishing frames or state after a seek or stop.
  */
 public class MultithreadedVideoPlayerModel implements PlaybackModel {
+
     private static final long NO_POSITION = -1;
     private static final long NO_HEADROOM = Long.MIN_VALUE;
     private static final long FIVE_SECONDS_US = 5_000_000L;
@@ -202,6 +203,14 @@ public class MultithreadedVideoPlayerModel implements PlaybackModel {
         stopSession();
         shutdown = true;
         lifecycle.shutdown();
+    }
+
+    /**
+     * @return logical media position in microseconds, read on JavaFX
+     */
+    @Override
+    public long getCurrentTimestampUs() {
+        return currentTimestampUs;
     }
 
     /**

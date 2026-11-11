@@ -7,6 +7,7 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="SubtitleServer" />
       </profile>
       <profile name="Annotation profile for VideoPlayer" enabled="true">
         <sourceOutputDir name="target/generated-sources/annotations" />
@@ -19,5 +20,10 @@
         <module name="VideoPlayer" />
       </profile>
     </annotationProcessing>
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="SubtitleServer" options="-parameters" />
+    </option>
   </component>
 </project>

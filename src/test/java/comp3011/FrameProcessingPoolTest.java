@@ -1,5 +1,5 @@
 /*
- * Pool regression test, written with assistance from OpenAI Codex.
+ * Pool regression test prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex.
  */
 package comp3011;
 

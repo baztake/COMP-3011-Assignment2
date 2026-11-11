@@ -1,5 +1,5 @@
 /*
- * Playback clock regression test developed with assistance from OpenAI Codex.
+ * Playback clock regression test prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex.
  */
 package comp3011;
 

@@ -15,7 +15,7 @@ public class FrameEffectTest {
     void fromOption_withIndividualOptions_shouldReturnCorrectEffect() {
         String[] shortOptions = {
             "-n", "-s", "-f", "-w", "-y", "-v",
-            "-d", "-j", "-m", "-b", "-p"
+            "-d", "-j", "-m", "-b", "-p", "-S"
         };
 
         String[] longOptions = {
@@ -29,13 +29,13 @@ public class FrameEffectTest {
             "--jitter-frames",
             "--mottle-frames",
             "--bleed-frames",
-            "--pepper-frames"
+            "--pepper-frames", "--subtitle-frames"
         };
 
         FrameEffect[] expected = {
             NUMBER, SCRATCH, FLICKER, BLACK_AND_WHITE,
             YELLOW, VIGNETTE, DUST, JITTER,
-            MOTTLE, BLEED, PEPPER
+            MOTTLE, BLEED, PEPPER, SUBTITLE
         };
 
         for (int i = 0; i < expected.length; i++) {
@@ -75,7 +75,7 @@ public class FrameEffectTest {
         FrameEffect[] effects = {
             NUMBER, SCRATCH, FLICKER, BLACK_AND_WHITE,
             YELLOW, VIGNETTE, DUST, JITTER,
-            MOTTLE, BLEED, PEPPER
+            MOTTLE, BLEED, PEPPER, SUBTITLE
         };
 
         Class<?>[] expectedTypes = {
@@ -89,7 +89,7 @@ public class FrameEffectTest {
             FrameJitterer.class,
             FrameMottler.class,
             FrameBleeder.class,
-            FramePepperer.class
+            FramePepperer.class, FrameSubtitler.class
         };
 
         for (int i = 0; i < effects.length; i++) {

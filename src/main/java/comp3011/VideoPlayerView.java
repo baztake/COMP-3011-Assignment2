@@ -4,7 +4,7 @@
  *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. <student name and student number insert here upon modification>
+ *   2. Bailey Staykov, a1886621, with assistance from OpenAI Codex
  *
  * Copyright 2026 Simon Ratcliffe
  */
@@ -46,6 +46,7 @@ public class VideoPlayerView {
     private static final int ICON_SIZE = 28;
 
     private final ImageView imageView = new ImageView();
+    private final ImageView subtitleView = new ImageView();
     private final Label statusLabel = new Label("No video loaded");
     private final Label tooltipLabel = new Label();
     private final Pane tooltipLayer = new Pane();
@@ -57,17 +58,23 @@ public class VideoPlayerView {
     private final Button forwardFiveButton;
     private final Button stopButton;
     private final Button audioButton;
+    private final Button subtitleButton;
 
     public VideoPlayerView() {
         imageView.setPreserveRatio(true);
         imageView.setSmooth(false);
 
-        videoPane = new StackPane(imageView);
+        // Both images have the video dimensions and use the same fit, keeping captions inside letterboxed video.
+        subtitleView.setPreserveRatio(true);
+        subtitleView.setMouseTransparent(true);
+        videoPane = new StackPane(imageView, subtitleView);
         videoPane.setStyle("-fx-background-color: black;");
         videoPane.setMinSize(0, 0);
         videoPane.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
         imageView.fitWidthProperty().bind(videoPane.widthProperty());
         imageView.fitHeightProperty().bind(videoPane.heightProperty());
+        subtitleView.fitWidthProperty().bind(videoPane.widthProperty());
+        subtitleView.fitHeightProperty().bind(videoPane.heightProperty());
 
         startOverButton = iconButton(createLoopIcon(false, null));
         backFiveButton = iconButton(createLoopIcon(false, "5"));
@@ -75,6 +82,7 @@ public class VideoPlayerView {
         forwardFiveButton = iconButton(createLoopIcon(true, "5"));
         stopButton = iconButton(createStopIcon());
         audioButton = iconButton(createAudioIcon(false));
+        subtitleButton = iconButton(new Label("CC"));
         setPlaybackControlsDisabled(true);
 
         HBox controls = new HBox(
@@ -85,6 +93,7 @@ public class VideoPlayerView {
             forwardFiveButton,
             stopButton,
             audioButton,
+            subtitleButton,
             statusLabel);
 
         controls.setPadding(new Insets(10));
@@ -127,12 +136,28 @@ public class VideoPlayerView {
         return audioButton;
     }
 
+    /** @return the subtitle toggle immediately to the right of the audio button */
+    public Button getSubtitleButton() {
+        return subtitleButton;
+    }
+
+    /** @param enabled whether subtitles should be displayed */
+    public void showSubtitlesEnabled(boolean enabled) {
+        subtitleButton.setGraphic(new Label(enabled ? "CC" : "CC /"));
+        subtitleButton.setAccessibleText(enabled ? "Subtitles on" : "Subtitles off");
+    }
+
     public void setStatus(String status) {
         statusLabel.setText(status);
     }
 
     public void setImage(Image image) {
         imageView.setImage(image);
+    }
+
+    /** @param image transparent caption layer, or null to remove subtitles immediately */
+    public void setSubtitleImage(Image image) {
+        subtitleView.setImage(image);
     }
 
     public void setVideoDisplaySize(double width, double height) {
@@ -158,6 +183,7 @@ public class VideoPlayerView {
         forwardFiveButton.setDisable(disabled);
         stopButton.setDisable(disabled);
         audioButton.setDisable(disabled);
+        subtitleButton.setDisable(disabled);
     }
 
     // There are a bunch of tooltip handling methods starting from here. We want to use tooltips so that people with
@@ -169,6 +195,7 @@ public class VideoPlayerView {
         setButtonTooltip(forwardFiveButton, "[RIGHT]");
         setButtonTooltip(stopButton, "[ESC]");
         setButtonTooltip(audioButton, "[A]");
+        setButtonTooltip(subtitleButton, "Subtitles [S]");
     }
 
     private void setButtonTooltip(Button button, String text) {

@@ -1,4 +1,4 @@
-/* Adapted from Assignment 1 server with assistance from OpenAI Codex. */
+/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. Adapted from Assignment 1. */
 package comp3011.subtitleserver.service;
 
 import comp3011.subtitleserver.dto.OpenAiTranscriptionResult;

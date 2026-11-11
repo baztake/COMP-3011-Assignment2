@@ -1,4 +1,4 @@
-/* Subtitle server tests prepared with assistance from OpenAI Codex. */
+/* Subtitle server tests prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. */
 package comp3011.subtitleserver;
 
 import comp3011.subtitleserver.dto.OpenAiTranscriptionResult;

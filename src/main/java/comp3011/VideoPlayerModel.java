@@ -34,6 +34,7 @@ import java.util.function.Consumer;
  * decoupled from the JavaFX view.
  */
 public class VideoPlayerModel implements PlaybackModel {
+
     private static final long NO_SEEK_REQUEST = -1; // Sentinel value used when no seek position is active.
     private static final long FIVE_SECONDS_US = 5_000_000L;
     private static final long AUDIO_LEAD_NS = 30_000_000L;
@@ -192,6 +193,14 @@ public class VideoPlayerModel implements PlaybackModel {
 
     public void shutdown() {
         closePlaybackResources();
+    }
+
+    /**
+     * @return logical media position in microseconds, read on JavaFX
+     */
+    @Override
+    public long getCurrentTimestampUs() {
+        return currentTimestampUs;
     }
 
     private void seekRelative(long offsetUs) {

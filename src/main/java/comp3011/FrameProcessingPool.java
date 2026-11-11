@@ -1,5 +1,5 @@
 /*
- * Concurrency documentation written with assistance from OpenAI Codex.
+ * Concurrency documentation prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex.
  */
 package comp3011;
 

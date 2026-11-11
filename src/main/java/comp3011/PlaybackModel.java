@@ -1,4 +1,4 @@
-/* Playback model contract prepared with assistance from OpenAI Codex. */
+/* Playback model contract prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. */
 package comp3011;
 
 import java.io.File;
@@ -52,4 +52,12 @@ public interface PlaybackModel {
      * Releases playback resources.
      */
     void shutdown();
+
+    /**
+     * Read on JavaFX. During a frame callback this is the delivered frame's position;
+     * while seeking it may instead be the requested position.
+     *
+     * @return logical media position in microseconds
+     */
+    long getCurrentTimestampUs();
 }

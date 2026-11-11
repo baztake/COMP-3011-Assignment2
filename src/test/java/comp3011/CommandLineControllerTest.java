@@ -27,6 +27,20 @@ public class CommandLineControllerTest {
 
     private File videoFile;
 
+    @Test
+    void shouldKeepSubtitleAndScratchOptionsDistinct() {
+        // Assemble and Act
+        CommandLineController shortOptions = controllerWithVideo("-sSn");
+        CommandLineController longOptions = controllerWithVideo("--subtitle-frames");
+
+        // Assert
+        assertThat(shortOptions.getFrameEffects()).containsExactly(
+            FrameEffect.SCRATCH, FrameEffect.SUBTITLE, FrameEffect.NUMBER);
+        assertThat(longOptions.getFrameEffects()).containsExactly(FrameEffect.SUBTITLE);
+        assertValid(shortOptions);
+        assertValid(longOptions);
+    }
+
     @BeforeEach
     void setUp() throws IOException {
         videoFile = Files.createFile(
@@ -380,6 +394,7 @@ public class CommandLineControllerTest {
               -m, --mottle-frames    Add cloudy emulsion mottling
               -b, --bleed-frames     Bleed light into frames
               -p, --pepper-frames    Pepper frames with dark spots/blotches
+              -S, --subtitle-frames  Add speech-to-text subtitles to frames
             
             Frame processors are applied in command-line order and may be repeated.
             Example: -nssnfwyvdjmbp numbers, scratches twice, numbers again, flickers,

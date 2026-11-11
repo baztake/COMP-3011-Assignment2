@@ -4,6 +4,12 @@
 # Maven build output
 target/
 
+# Subtitle server state
+/data/
+.env
+.env.*
+!.env.example
+
 # Eclipse project metadata
 .classpath
 .project

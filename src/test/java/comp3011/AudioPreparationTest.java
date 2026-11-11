@@ -1,5 +1,5 @@
 /*
- * Audio preparation regression tests written with assistance from OpenAI Codex.
+ * Audio preparation regression tests prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex.
  */
 package comp3011;
 

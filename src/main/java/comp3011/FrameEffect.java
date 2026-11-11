@@ -30,7 +30,8 @@ public enum FrameEffect {
     JITTER('j', "jitter-frames"),
     MOTTLE('m', "mottle-frames"),
     BLEED('b', "bleed-frames"),
-    PEPPER('p', "pepper-frames");
+    PEPPER('p', "pepper-frames"),
+    SUBTITLE('S', "subtitle-frames");
 
     final char shortOption;
     final String longOption;
@@ -73,6 +74,7 @@ public enum FrameEffect {
             case MOTTLE -> new FrameMottler(occurrenceIndex);
             case BLEED -> new FrameBleeder();
             case PEPPER -> new FramePepperer(occurrenceIndex);
+            case SUBTITLE -> new FrameSubtitler();
         };
     }
 }

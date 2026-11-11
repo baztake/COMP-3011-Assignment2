@@ -40,7 +40,7 @@ A few requirements come with this:
 * Extract and upload audio in bounded chunks on background threads, keeping network requests separate from playback.
   Cache transcription results on the server and retain received subtitles in the player for seeking and network outages.
 * Convert transcription results into timed subtitle cues, filtering low-confidence non-speech segments and splitting
-  text at natural phrase boundaries to meet the line length, line count and display duration requirements.
+  text at natural phrase boundaries to meet the line length, line count, and display duration requirements.
 * Add a subtitle frame processor that selects cues using media timestamps and draws white text with a black outline.
   Preserve a clean version of the displayed frame so subtitle toggles can redraw it immediately, including while paused,
   without restarting playback or leaving subtitles baked into queued frames.
@@ -48,4 +48,33 @@ A few requirements come with this:
   effect ordering and both playback modes, and handle pause, seeking and replacement media without displaying stale
   cues.
 * Add focused tests for cue timing and formatting, API responses, caching and usage accounting. Verify playback and
-  immediate toggling under heavy effects, seeking, network loss and recovery, then document the design and results.
+  immediate toggling under heavy effects, seeking, network loss, and recovery, then document the design and results.
+
+## Implementation Log
+
+### Subtitle server
+
+Extended and pruned the original assignment 1 server with new `POST /api/v1/subtitles` and
+`GET /api/v1/global/usage` endpoints. It uses Whisper word/segment timestamps, filters likely non-speech, and persists
+cached transcriptions and cumulative usage in seconds.
+
+Chose to do this first as it seemed like the most approachable part of the assignment. It also allowed for testing the
+server independently of the player.
+
+### Mock subtitles milestone
+
+The player currently uses a short sample track during the first 16 seconds of any media. These captions are labelled as
+samples and are not transcribed dialogue.
+
+* `SubtitleCue` validates already formatted text and one-to-seven-second intervals. `SubtitleTrack` holds an immutable,
+  ordered set of non-overlapping cues and looks up captions using the displayed media position, including after seeking.
+* `FrameSubtitler` was implemented almost entirely by OpenAI Codex using GPT 6.1 Sol, with oversight from myself. It was
+  simple to give it the requirements of the subtitles and have it render them with the context of the other frame
+  processors. I ensured I still understand the code and its application within the video player.
+* Both playback modes support this milestone. Other effects keep their existing ordering, but captions currently appear
+  above all effects regardless of the position or repetition of `-S`. Ordered subtitle/effect composition remains to be
+  integrated before Assignment 3 is complete.
+* The player still needs audio extraction, cloud requests, transcription formatting, and network recovery. Its sample
+  track makes no network requests or API charges. The server-side transcription and cache are implemented separately.
+
+
