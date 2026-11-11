@@ -1,0 +1,125 @@
+:root {
+    --bg: #12181c;
+    --panel: #1b2329;
+    --border: #2a343b;
+    --text: #edeff2;
+    --muted: #8b96a1;
+    --error: #e4572e;
+    --font-display: "Space Grotesk", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+
+body {
+    margin: 0;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-display), serif;
+}
+
+.console {
+    width: 100%;
+    max-width: 380px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    text-align: center;
+}
+
+h1 { margin: 0; font-size: 1.4rem; }
+#status { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+.sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+}
+
+:focus-visible { outline: 3px solid #7fd8ce; outline-offset: 2px; }
+
+.record-button {
+    position: relative;
+    width: 88px; height: 88px;
+    border: none;
+    border-radius: 50%;
+    background: var(--text);
+    color: var(--bg);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+}
+
+.record-button__icon {
+    width: 0; height: 0;
+    margin-left: 4px;
+    border-top: 10px solid transparent;
+    border-bottom: 10px solid transparent;
+    border-left: 16px solid var(--bg);
+}
+
+.record-button[aria-pressed="true"] { background: var(--error); }
+.record-button[aria-pressed="true"] .record-button__icon {
+    width: 18px; height: 18px;
+    margin-left: 0;
+    border: none;
+    background: var(--text);
+    border-radius: 3px;
+}
+
+.record-button__ring {
+    position: absolute;
+    inset: -10px;
+    border-radius: 50%;
+    border: 2px solid var(--error);
+    opacity: 0;
+}
+.record-button[aria-pressed="true"] .record-button__ring {
+    opacity: 1;
+    animation: pulse 1.6s ease-out infinite;
+}
+@keyframes pulse {
+    0% { transform: scale(0.9); opacity: 0.7; }
+    100% { transform: scale(1.35); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .record-button[aria-pressed="true"] .record-button__ring { animation: none; opacity: 0.5; }
+}
+
+.timer {
+    margin: 0;
+    font-family: var(--font-mono), serif;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.error {
+    padding: 10px 12px;
+    border: 1px solid var(--error);
+    border-radius: 8px;
+    font-size: 0.85rem;
+}
+
+.transcript {
+    width: 100%;
+    min-height: 100px;
+    margin: 0;
+    padding: 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-family: var(--font-mono), serif;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    text-align: left;
+    white-space: pre-wrap;
+    color: var(--muted);
+}
