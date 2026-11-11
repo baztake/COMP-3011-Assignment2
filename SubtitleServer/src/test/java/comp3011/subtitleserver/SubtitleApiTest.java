@@ -3,6 +3,9 @@ package comp3011.subtitleserver;
 
 import com.sun.net.httpserver.HttpServer;
 import comp3011.subtitleserver.service.SubtitleStore;
+import comp3011.subtitleserver.service.SubtitleService;
+import comp3011.subtitleserver.service.OpenAiTranscriptionService;
+import comp3011.subtitleserver.dto.SubtitleResponse;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +15,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -35,11 +40,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Exercises real multipart HTTP requests through Spring and out to a local fake provider. */
+/**
+ * Exercises real multipart HTTP requests through Spring and out to a local fake provider.
+ */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Timeout(20)
 class SubtitleApiTest {
+
     private static final String TRANSCRIPT = """
         {
           "task":"transcribe", "duration":12.5, "language":"english",
@@ -147,6 +156,17 @@ class SubtitleApiTest {
         assertThat(receivedBody.get().split("name=\"timestamp_granularities\\[\\]\"", -1)).hasSize(3);
         SubtitleStore restarted = new SubtitleStore(directory.resolve("state.json").toString(), 256);
         assertThat(restarted.getUsage()).isEqualTo(usage());
+
+        // Reuse the entry created through HTTP, rather than duplicating the server's hash algorithm in the test.
+        OpenAiTranscriptionService offlineProvider = new OpenAiTranscriptionService(RestClient.create(), "");
+        SubtitleService offlineService = new SubtitleService(offlineProvider, restarted);
+        MockMultipartFile cachedAudio = new MockMultipartFile("file", "renamed.wav", "audio/wav",
+            "first audio".getBytes(StandardCharsets.UTF_8));
+        assertThat(offlineService.transcribe(cachedAudio)).isEqualTo(JSON.readValue(response.body(), SubtitleResponse.class));
+        assertThatThrownBy(() -> offlineService.transcribe(
+            new MockMultipartFile("file", "new.wav", "audio/wav", new byte[]{1})))
+            .hasMessageContaining("OPENAI_API_KEY");
+        assertThat(restarted.getUsage()).isEqualTo(before + 13.0);
     }
 
     @Test
@@ -162,7 +182,9 @@ class SubtitleApiTest {
                 int client = index;
                 requests.add(clients.submit(() -> upload("file", "client-" + client + ".wav", "shared audio")));
             }
-            for (Future<HttpResponse<String>> request : requests) assertThat(request.get(8, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+            for (Future<HttpResponse<String>> request : requests) {
+                assertThat(request.get(8, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+            }
         }
         providerStatus.set(503);
         HttpResponse<String> cached = upload("file", "renamed.wav", "shared audio");
@@ -224,7 +246,8 @@ class SubtitleApiTest {
         assertThat(upload("file", "bad.txt", "audio").statusCode()).isEqualTo(415);
         assertThat(upload("file", "large.wav", "x".repeat(2048)).statusCode()).isEqualTo(413);
         assertThat(providerCalls.get()).isEqualTo(before);
-        HttpResponse<String> wrongMethod = CLIENT.send(HttpRequest.newBuilder(uri("/api/v1/subtitles")).GET().build(), HttpResponse.BodyHandlers.ofString());
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/subtitles")).GET().build();
+        HttpResponse<String> wrongMethod = CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
         assertThat(wrongMethod.statusCode()).isEqualTo(405);
     }
 
@@ -251,7 +274,8 @@ class SubtitleApiTest {
     }
 
     private double usage() throws Exception {
-        HttpResponse<String> response = CLIENT.send(HttpRequest.newBuilder(uri("/api/v1/global/usage")).GET().build(), HttpResponse.BodyHandlers.ofString());
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/global/usage")).GET().build();
+        HttpResponse<String> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(200);
         JsonNode body = JSON.readTree(response.body());
         assertThat(body.size()).isEqualTo(1);

@@ -81,10 +81,11 @@ does not automatically repeat potentially paid requests. Connection and read tim
 ## Cache, concurrency and storage
 
 `SubtitleService` hashes the encoded audio bytes and fixed transcription/filter settings using SHA-256. Filenames do
-not identify the media. It reads hashes as a stream instead of allocating a second full upload buffer. A fixed array of
-32 locks coordinates cache misses: equal hashes recheck the cache under the same lock, avoiding duplicate successful
-transcriptions across concurrent clients. Colliding hashes may serialize unrelated misses. Cached results bypass these
-locks and never wait on provider network I/O. Request work belongs to bounded servlet threads, not JavaFX.
+not identify the media. It reads hashes as a stream instead of allocating a second full upload buffer. One lock processes
+uncached chunks sequentially. Each waiting request checks the cache again after acquiring the lock, avoiding duplicate
+successful transcriptions. This is simpler than managing separate locks for different chunks, but new chunks may wait
+behind a slow provider request. Cached lookups bypass this lock; HTTP requests can still wait if all servlet threads are
+busy. Request work belongs to the server's servlet threads, not JavaFX.
 
 `SubtitleStore` protects its map and usage total with one monitor. It writes both to a temporary JSON file and replaces
 the committed state together. The default `./data/subtitles.json` is relative to the server's working directory; set
@@ -95,6 +96,7 @@ The cache retains at most 256 chunks, evicting the oldest inserted entries; evic
 `subtitles.cache-max-entries` in configuration if needed. Restarting the server reloads cached results and usage, and
 cached chunks remain available when OpenAI cannot be reached. A corrupt store fails startup instead of resetting the
 total silently. A failed write retains the result in memory and blocks further storage operations until saving succeeds.
+Any other completed result is retained before retrying that save, so a storage failure does not discard paid work.
 Abrupt process or machine failure between provider completion and a successful state write can still lose that update.
 
 ## Verification

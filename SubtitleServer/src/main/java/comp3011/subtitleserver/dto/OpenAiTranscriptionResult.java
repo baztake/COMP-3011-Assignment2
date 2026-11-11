@@ -34,9 +34,9 @@ public record OpenAiTranscriptionResult(
         }
         Objects.requireNonNull(text, "text");
 
-        // Whisper can omit empty timing arrays for silence; speech must include both requested arrays.
-        words = words == null && text.isBlank() ? List.of() : List.copyOf(words);
-        segments = segments == null && text.isBlank() ? List.of() : List.copyOf(segments);
+        // Missing arrays are valid for silence. Speech must include both requested timing arrays.
+        words = words == null ? List.of() : List.copyOf(words);
+        segments = segments == null ? List.of() : List.copyOf(segments);
 
         if (!text.isBlank() && (words.isEmpty() || segments.isEmpty())) {
             throw new IllegalArgumentException("Speech response is missing requested timestamps");
@@ -93,6 +93,7 @@ public record OpenAiTranscriptionResult(
          */
         @JsonIgnore
         public boolean isSuppressed() {
+            // The assignment requires both conditions, not either one on its own.
             return noSpeechProb > 0.6 && avgLogProb < -1.0;
         }
     }
@@ -105,7 +106,9 @@ public record OpenAiTranscriptionResult(
     public record Usage(String type, Double seconds) {
         public Usage {
             requireFinite(seconds);
-            if (!"duration".equals(type) || seconds < 0) throw new IllegalArgumentException("Invalid audio usage");
+            if (!"duration".equals(type) || seconds < 0) {
+                throw new IllegalArgumentException("Invalid audio usage");
+            }
         }
     }
 

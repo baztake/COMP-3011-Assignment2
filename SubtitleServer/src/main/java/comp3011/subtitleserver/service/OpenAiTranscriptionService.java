@@ -17,6 +17,12 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InterruptedIOException;
+import java.net.SocketException;
+import java.net.UnknownHostException;
+import java.net.http.HttpTimeoutException;
+import java.util.Locale;
+
 /**
  * Performs one bounded Whisper request; failures are not automatically retried or billed locally.
  */
@@ -45,47 +51,67 @@ public class OpenAiTranscriptionService {
             throw new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE, "Set OPENAI_API_KEY on the subtitle server");
         }
 
-        // Build request body
-        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        String filename = audio.getOriginalFilename();
-        int separator = filename.lastIndexOf('.');
-        HttpHeaders fileHeaders = new HttpHeaders();
-        fileHeaders.setContentDispositionFormData("file", "audio" + filename.substring(separator).toLowerCase(java.util.Locale.ROOT));
-        fileHeaders.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-        body.add("file", new HttpEntity<>(audio.getResource(), fileHeaders));
-        body.add("model", "whisper-1");
-        body.add("response_format", "verbose_json");
-        body.add("timestamp_granularities[]", "word");
-        body.add("timestamp_granularities[]", "segment");
-
+        // Do not retry, cloud may have processed audio before a connection failed.
         try {
-            OpenAiTranscriptionResult result = client.post().uri("/audio/transcriptions").contentType(MediaType.MULTIPART_FORM_DATA).body(body).retrieve().body(OpenAiTranscriptionResult.class);
+            OpenAiTranscriptionResult result = client.post()
+                .uri("/audio/transcriptions")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(buildRequest(audio))
+                .retrieve()
+                .body(OpenAiTranscriptionResult.class);
             if (result == null) {
                 throw new SubtitleException(HttpStatus.BAD_GATEWAY, "Transcription provider returned no data");
             }
 
             return result;
         } catch (RestClientResponseException error) {
-            int status = error.getStatusCode().value();
-            if (status == 400 || status == 413 || status == 415 || status == 422) {
-                throw new SubtitleException(HttpStatus.BAD_REQUEST, "Transcription provider rejected the audio chunk");
+            throw providerFailure(error.getStatusCode().value());
+        } catch (RestClientException | IllegalArgumentException error) {
+            if (isConnectionFailure(error)) {
+                throw new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE, "Cannot reach transcription provider; retry later");
             }
-            if (status == 429 || status == 401 || status == 403) {
-                throw new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE, "Transcription provider is unavailable; check server credentials and quota");
-            }
-            throw new SubtitleException(HttpStatus.BAD_GATEWAY, "Transcription provider failed; retry later");
-        } catch (ResourceAccessException error) {
-            throw new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE, "Cannot reach transcription provider; retry later");
-        } catch (RestClientException error) {
-            // A timeout while consuming the response can be wrapped instead of exposed as ResourceAccessException.
-            for (Throwable cause = error; cause != null; cause = cause.getCause()) {
-                if (cause instanceof java.io.InterruptedIOException || cause instanceof java.net.SocketException || cause instanceof java.net.UnknownHostException || cause instanceof java.net.http.HttpTimeoutException) {
-                    throw new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE, "Cannot reach transcription provider; retry later");
-                }
-            }
-            throw new SubtitleException(HttpStatus.BAD_GATEWAY, "Transcription provider returned invalid timing data");
-        } catch (IllegalArgumentException error) {
             throw new SubtitleException(HttpStatus.BAD_GATEWAY, "Transcription provider returned invalid timing data");
         }
+    }
+
+    private MultiValueMap<String, Object> buildRequest(MultipartFile audio) {
+        // Keep the real encoding extension, but do not forward a user's filename or local path.
+        String filename = audio.getOriginalFilename();
+        String extension = filename.substring(filename.lastIndexOf('.')).toLowerCase(Locale.ROOT);
+        HttpHeaders fileHeaders = new HttpHeaders();
+        fileHeaders.setContentDispositionFormData("file", "audio" + extension);
+        fileHeaders.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", new HttpEntity<>(audio.getResource(), fileHeaders));
+        body.add("model", "whisper-1");
+        body.add("response_format", "verbose_json");
+        // Word timings support wrapping, while segments provide phrase boundaries and silence confidence.
+        body.add("timestamp_granularities[]", "word");
+        body.add("timestamp_granularities[]", "segment");
+        return body;
+    }
+
+    private SubtitleException providerFailure(int status) {
+        // Return our own messages because provider errors can include credentials or request details.
+        return switch (status) {
+            case 400, 413, 415, 422 -> new SubtitleException(HttpStatus.BAD_REQUEST,
+                "Transcription provider rejected the audio chunk");
+            case 401, 403, 429 -> new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE,
+                "Transcription provider is unavailable; check server credentials and quota");
+            default -> new SubtitleException(HttpStatus.BAD_GATEWAY, "Transcription provider failed; retry later");
+        };
+    }
+
+    private boolean isConnectionFailure(Throwable error) {
+        // Spring may wrap a read timeout inside another exception when consuming the response body.
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ResourceAccessException || cause instanceof InterruptedIOException
+                || cause instanceof SocketException || cause instanceof UnknownHostException
+                || cause instanceof HttpTimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -29,7 +29,7 @@ public class SubtitleStore {
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final LinkedHashMap<String, SubtitleResponse> entries = new LinkedHashMap<>();
     private double usage;
-    private boolean dirty;
+    private boolean unsavedChanges;
 
     /**
      * Loads durable state, failing startup rather than silently losing usage if it is corrupt.
@@ -58,8 +58,9 @@ public class SubtitleStore {
                 }
                 usage = state.usage();
                 state.entries().forEach((key, value) -> {
-                    if (!key.matches("[a-f0-9]{64}") || value == null)
+                    if (!key.matches("[a-f0-9]{64}") || value == null) {
                         throw new IllegalArgumentException("Invalid cache entry");
+                    }
                     entries.put(key, value);
                 });
                 trim();
@@ -75,7 +76,8 @@ public class SubtitleStore {
      * @throws SubtitleException if previously changed state still cannot be persisted
      */
     public synchronized SubtitleResponse find(String key) {
-        flush();
+        // Retry a failed write before serving more requests; keep the in-memory result until it succeeds.
+        saveIfNeeded();
         return entries.get(key);
     }
 
@@ -83,7 +85,7 @@ public class SubtitleStore {
      * @return cumulative successful provider usage in seconds, including evicted chunks
      */
     public synchronized double getUsage() {
-        flush();
+        saveIfNeeded();
         return usage;
     }
 
@@ -97,41 +99,51 @@ public class SubtitleStore {
      * @throws SubtitleException if state cannot be persisted
      */
     public synchronized void record(String key, SubtitleResponse result, double seconds) {
-        flush();
         if (!Double.isFinite(seconds) || seconds < 0 || !Double.isFinite(usage + seconds)) {
             throw new IllegalArgumentException("Invalid usage seconds");
         }
+        // Retain this completed request even if an earlier result is still waiting to be saved.
+        // Trying the old save first could discard this result and cause another paid transcription.
         usage += seconds;
         entries.put(key, result);
         trim();
-        dirty = true;
-        flush();
+        unsavedChanges = true;
+        saveIfNeeded();
     }
 
     private void trim() {
-        while (entries.size() > maxEntries) entries.remove(entries.keySet().iterator().next());
+        // LinkedHashMap keeps insertion order. Evict old captions, but keep their usage in the total.
+        while (entries.size() > maxEntries) {
+            entries.pollFirstEntry();
+        }
     }
 
-    private void flush() {
-        if (!dirty) return;
+    private void saveIfNeeded() {
+        if (!unsavedChanges) {
+            return;
+        }
         Path temporary = null;
         try {
-            byte[] data = mapper.writeValueAsBytes(new State(1, usage, new LinkedHashMap<>(entries)));
+            // All callers hold this store's monitor, so entries cannot change during serialization.
+            byte[] data = mapper.writeValueAsBytes(new State(1, usage, entries));
             temporary = Files.createTempFile(file.getParent(), "subtitles-", ".tmp");
             Files.write(temporary, data);
+            // Replace the complete file so a failed write cannot leave half a transcript or usage total.
             try {
                 Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException unsupported) {
                 Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
             }
-            dirty = false;
+            unsavedChanges = false;
         } catch (IOException | RuntimeException error) {
             throw new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE, "Cannot save subtitle cache and usage; check server storage");
         } finally {
             if (temporary != null) {
                 try {
                     Files.deleteIfExists(temporary);
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) {
+                    // Leftover temporary files are never loaded as the saved state.
+                }
             }
         }
     }

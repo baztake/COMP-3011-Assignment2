@@ -34,9 +34,9 @@ public class SubtitleService {
     private static final Set<String> EXTENSIONS = Set.of("wav", "mp3", "mp4", "m4a", "webm", "mpeg", "mpga");
     private final OpenAiTranscriptionService provider;
     private final SubtitleStore store;
-    // Fixed locks bound coordination memory. Identical hashes always share a lock and recheck the cache.
-    // Collisions can serialize unrelated misses, but cache hits never wait for provider requests.
-    private final Object[] requestLocks = new Object[32];
+    // One lock keeps duplicate uploads from making separate requests.
+    // New transcriptions run one at a time, cache hits do not need this lock.
+    private final Object transcriptionLock = new Object();
 
     /**
      * @param provider Whisper HTTP integration
@@ -45,7 +45,6 @@ public class SubtitleService {
     public SubtitleService(OpenAiTranscriptionService provider, SubtitleStore store) {
         this.provider = provider;
         this.store = store;
-        for (int index = 0; index < requestLocks.length; index++) requestLocks[index] = new Object();
     }
 
     /**
@@ -64,8 +63,8 @@ public class SubtitleService {
             return cached;
         }
 
-        Object lock = requestLocks[(key.hashCode() & Integer.MAX_VALUE) % requestLocks.length];
-        synchronized (lock) {
+        synchronized (transcriptionLock) {
+            // Another request may have saved this chunk while we were waiting for the lock.
             cached = store.find(key);
             if (cached != null) {
                 return cached;
@@ -73,14 +72,7 @@ public class SubtitleService {
 
             OpenAiTranscriptionResult result = provider.transcribe(audio);
 
-            List<Segment> segments = result.segments().stream().filter(segment -> !segment.isSuppressed()).sorted(Comparator.comparingDouble(Segment::start)).toList();
-            // Filtering words as well prevents discarded phrases reappearing during client-side wrapping.
-            List<Word> words = result.words().stream().filter(word -> segments.stream().anyMatch(segment -> {
-                double midpoint = word.start() + (word.end() - word.start()) / 2;
-                return midpoint >= segment.start() && midpoint < segment.end();
-            })).sorted(Comparator.comparingDouble(Word::start)).toList();
-            String text = segments.stream().map(segment -> segment.text().strip()).filter(phrase -> !phrase.isEmpty()).collect(Collectors.joining(" "));
-            SubtitleResponse response = new SubtitleResponse(result.duration(), result.language(), text, words, segments);
+            SubtitleResponse response = filterSpeech(result);
             // Count original input, even if every segment was suppressed. Hits never reach this call.
             store.record(key, response, result.usageSeconds());
 
@@ -88,13 +80,49 @@ public class SubtitleService {
         }
     }
 
+    private SubtitleResponse filterSpeech(OpenAiTranscriptionResult result) {
+        List<Segment> segments = result.segments().stream()
+            .filter(segment -> !segment.isSuppressed())
+            .sorted(Comparator.comparingDouble(Segment::start))
+            .toList();
+
+        // Remove words from rejected segments too, otherwise the player could display them again.
+        List<Word> words = result.words().stream()
+            .filter(word -> belongsToSpeech(word, segments))
+            .sorted(Comparator.comparingDouble(Word::start))
+            .toList();
+        String text = segments.stream()
+            .map(segment -> segment.text().strip())
+            .filter(phrase -> !phrase.isEmpty())
+            .collect(Collectors.joining(" "));
+
+        return new SubtitleResponse(result.duration(), result.language(), text, words, segments);
+    }
+
+    private boolean belongsToSpeech(Word word, List<Segment> segments) {
+        // Word and segment boundaries can differ slightly, so use the word's midpoint.
+        double midpoint = word.start() + (word.end() - word.start()) / 2;
+        for (Segment segment : segments) {
+            if (midpoint >= segment.start() && midpoint < segment.end()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void validate(MultipartFile audio) {
-        if (audio == null || audio.isEmpty())
+        if (audio == null || audio.isEmpty()) {
             throw new SubtitleException(HttpStatus.BAD_REQUEST, "Upload a nonempty audio file as multipart field 'file'");
-        if (audio.getSize() > MAX_BYTES)
-            throw new SubtitleException(HttpStatus.PAYLOAD_TOO_LARGE, "Audio chunks must not exceed 24 MiB");
+        }
+        if (audio.getSize() > MAX_BYTES) {
+            throw new SubtitleException(HttpStatus.CONTENT_TOO_LARGE, "Audio chunks must not exceed 24 MiB");
+        }
         String filename = audio.getOriginalFilename();
-        if (filename == null || !filename.contains(".") || !EXTENSIONS.contains(filename.substring(filename.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT))) {
+        if (filename == null || !filename.contains(".")) {
+            throw new SubtitleException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Audio filename must include its encoding extension");
+        }
+        String extension = filename.substring(filename.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+        if (!EXTENSIONS.contains(extension)) {
             throw new SubtitleException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Use a WAV, MP3, MP4, M4A, WebM, MPEG or MPGA audio chunk");
         }
     }
