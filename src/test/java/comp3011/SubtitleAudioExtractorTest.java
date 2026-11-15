@@ -22,11 +22,12 @@ class SubtitleAudioExtractorTest {
         long sourceSize = Files.size(video.toPath());
 
         // Act
-        SubtitleAudioExtractor.AudioChunk chunk = new SubtitleAudioExtractor().extract(video);
+        SubtitleAudioExtractor.AudioChunk chunk = new SubtitleAudioExtractor().extract(video, 0);
 
         // Assert
         assertThat(chunk.offsetUs()).isZero();
         assertThat(chunk.durationUs()).isEqualTo(30_000_000);
+        assertThat(chunk.last()).isFalse();
         assertThat(chunk.wav().length).isLessThan(961_000);
         assertThat(Files.size(video.toPath())).isEqualTo(sourceSize);
         try (AudioInputStream wav = AudioSystem.getAudioInputStream(new ByteArrayInputStream(chunk.wav()))) {
@@ -43,9 +44,28 @@ class SubtitleAudioExtractorTest {
         File video = SubtitleTestMedia.video(directory, 1, false);
 
         // Act
-        SubtitleAudioExtractor.AudioChunk chunk = new SubtitleAudioExtractor().extract(video);
+        SubtitleAudioExtractor.AudioChunk chunk = new SubtitleAudioExtractor().extract(video, 0);
 
         // Assert
-        assertThat(chunk).isNull();
+        assertThat(chunk.wav()).isEmpty();
+        assertThat(chunk.last()).isTrue();
+    }
+
+    @Test
+    void shouldExtractTheFinalChunkAtItsRequestedOffset(@TempDir Path directory) throws Exception {
+        // Assemble
+        File video = SubtitleTestMedia.video(directory, 35, true);
+
+        // Act
+        SubtitleAudioExtractor.AudioChunk chunk = new SubtitleAudioExtractor().extract(video, 30_000_000);
+
+        // Assert
+        assertThat(chunk.offsetUs()).isEqualTo(30_000_000);
+        assertThat(chunk.durationUs()).isBetween(5_000_000L, 5_100_000L);
+        assertThat(chunk.last()).isTrue();
+        try (AudioInputStream wav = AudioSystem.getAudioInputStream(new ByteArrayInputStream(chunk.wav()))) {
+            assertThat(wav.getFormat().getSampleRate()).isEqualTo(16_000);
+            assertThat(wav.readNBytes(16_000)).isNotEqualTo(new byte[16_000]);
+        }
     }
 }

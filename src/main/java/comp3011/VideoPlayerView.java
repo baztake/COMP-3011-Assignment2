@@ -46,6 +46,7 @@ import javafx.scene.shape.StrokeLineCap;
 public class VideoPlayerView {
 
     private static final int ICON_SIZE = 28;
+    private static final int SUBTITLE_STATUS_HEIGHT = 24;
 
     private final ImageView imageView = new ImageView();
     private final ImageView subtitleView = new ImageView();
@@ -101,13 +102,15 @@ public class VideoPlayerView {
 
         controls.setPadding(new Insets(10));
 
-        // Keep long network-status messages below the controls so they do not widen the player window.
-        subtitleStatusLabel.setWrapText(true);
+        // Reserve one status row even when hidden, toggling subtitles must not resize the video or its frame digits.
+        // Long messages stay on one line and use the label's normal ellipsis instead of growing the row.
+        subtitleStatusLabel.setMinHeight(SUBTITLE_STATUS_HEIGHT);
+        subtitleStatusLabel.setPrefHeight(SUBTITLE_STATUS_HEIGHT);
+        subtitleStatusLabel.setMaxHeight(SUBTITLE_STATUS_HEIGHT);
         subtitleStatusLabel.setMinWidth(0);
         subtitleStatusLabel.setPrefWidth(0);
         subtitleStatusLabel.setMaxWidth(Double.MAX_VALUE);
         subtitleStatusLabel.setVisible(false);
-        subtitleStatusLabel.managedProperty().bind(subtitleStatusLabel.visibleProperty());
         VBox bottom = new VBox(controls, subtitleStatusLabel);
         VBox.setMargin(subtitleStatusLabel, new Insets(0, 10, 5, 10));
 

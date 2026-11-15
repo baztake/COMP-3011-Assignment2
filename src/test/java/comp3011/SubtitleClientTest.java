@@ -34,7 +34,7 @@ class SubtitleClientTest {
             server.verify(postRequestedFor(urlEqualTo("/api/v1/subtitles"))
                 .withHeader("Content-Type", containing("multipart/form-data"))
                 .withRequestBody(containing("name=\"file\""))
-                .withRequestBody(containing("filename=\"opening.wav\""))
+                .withRequestBody(containing("filename=\"audio.wav\""))
                 .withRequestBody(containing("RIFF-test-audio")));
         }
     }

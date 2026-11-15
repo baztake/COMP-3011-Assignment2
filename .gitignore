@@ -3,6 +3,8 @@
 
 # Maven build output
 target/
+logs/
+*.log
 
 # Subtitle server state
 /data/

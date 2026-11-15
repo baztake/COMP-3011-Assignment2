@@ -58,16 +58,17 @@ class SubtitleLoaderTest {
     void shouldDeliverTheLoadedTrack() throws Exception {
         // Assemble
         server.stubFor(post("/api/v1/subtitles").willReturn(okJson(SubtitleTestMedia.TRANSCRIPT)));
-        Consumer<SubtitleTrack> ready = mock();
+        Consumer<SubtitleLoader.LoadedChunk> ready = mock();
         Consumer<String> failed = mock();
-        ArgumentCaptor<SubtitleTrack> result = ArgumentCaptor.forClass(SubtitleTrack.class);
+        ArgumentCaptor<SubtitleLoader.LoadedChunk> result = ArgumentCaptor.forClass(SubtitleLoader.LoadedChunk.class);
 
         // Act
-        FxToolkit.setupFixture(() -> loader.load(video, ready, failed));
+        FxToolkit.setupFixture(() -> loader.load(video, 0, ready, failed));
 
         // Assert
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> verify(ready).accept(result.capture()));
-        assertThat(result.getValue().findCue(0).text()).isEqualTo("Current.");
+        assertThat(result.getValue().track().findCue(0).text()).isEqualTo("Current.");
+        assertThat(result.getValue().last()).isTrue();
         verifyNoInteractions(failed);
     }
 
@@ -75,11 +76,11 @@ class SubtitleLoaderTest {
     void shouldReportAnUnavailableServer() throws Exception {
         // Assemble
         server.stubFor(post("/api/v1/subtitles").willReturn(serviceUnavailable()));
-        Consumer<SubtitleTrack> ready = mock();
+        Consumer<SubtitleLoader.LoadedChunk> ready = mock();
         Consumer<String> failed = mock();
 
         // Act
-        FxToolkit.setupFixture(() -> loader.load(video, ready, failed));
+        FxToolkit.setupFixture(() -> loader.load(video, 0, ready, failed));
 
         // Assert
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> verify(failed).accept(contains("retry")));

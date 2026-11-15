@@ -15,6 +15,7 @@ import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
+import org.bytedeco.javacv.FFmpegLogCallback;
 
 import java.util.List;
 
@@ -47,6 +48,8 @@ public class VideoPlayerApp extends Application {
             System.exit(commandLineController.getExitCode());
         }
 
+        // Repeated native media dumps can fill TITAN's output pipes, retain actual decoder errors only.
+        FFmpegLogCallback.setLevel(org.bytedeco.ffmpeg.global.avutil.AV_LOG_ERROR);
         launch(args);
     }
 
@@ -104,9 +107,20 @@ public class VideoPlayerApp extends Application {
     }
 
     private void setVideoSize(int width, int height) {
+        if (videoWidth == width && videoHeight == height) {
+            return;
+        }
+
+        boolean firstVideoSize = videoWidth <= 0 || videoHeight <= 0;
         videoWidth = width;
         videoHeight = height;
         updateVideoSize();
+
+        // Fit the window once at startup, later metadata callbacks must preserve the user's chosen size and position.
+        if (firstVideoSize && width > 0 && height > 0 && !stage.isMaximized()) {
+            stage.sizeToScene();
+            alignSceneToSelectedScreen();
+        }
     }
 
     private void updateVideoSize() {
@@ -128,10 +142,6 @@ public class VideoPlayerApp extends Application {
         double displayHeight = videoHeight / outputScaleY;
 
         controller.getView().setVideoDisplaySize(displayWidth, displayHeight);
-        if (!stage.isMaximized()) {
-            stage.sizeToScene();
-            alignSceneToSelectedScreen();
-        }
     }
 
     private void alignSceneToSelectedScreen() {

@@ -16,8 +16,14 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
 import java.io.File;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.BiConsumer;
+
+import static comp3011.SubtitleAudioExtractor.CHUNK_DURATION_US;
 
 /**
  * The controller part of the video player model-view-controller architecture.
@@ -33,11 +39,14 @@ public class VideoPlayerController {
     private final VideoPlayerView view;
     private final BiConsumer<Integer, Integer> videoSizeChangedHandler;
     // JavaFX owns this state. Captions stay separate from decoded frames so toggles do not restart playback.
-    private FrameSubtitler subtitler = new FrameSubtitler();
+    private final Map<Long, SubtitleTrack> subtitleChunks = new HashMap<>();
+    private final Set<Long> failedSubtitleChunks = new HashSet<>();
+    private SubtitleTrack renderedTrack;
+    private FrameSubtitler subtitler;
     private final SubtitleLoader subtitleLoader = new SubtitleLoader();
     private File subtitleFile;
-    private boolean subtitlesRequested;
-    private boolean subtitlesLoaded;
+    private long loadingChunkUs = -1;
+    private long subtitleEndUs = Long.MAX_VALUE;
     private boolean subtitlesEnabled;
     private Image displayedFrame;
     private long displayedTimestampUs;
@@ -121,9 +130,13 @@ public class VideoPlayerController {
     public void play(File file) {
         subtitleLoader.cancel();
         subtitleFile = file;
-        subtitlesRequested = false;
-        subtitlesLoaded = false;
-        subtitler = new FrameSubtitler();
+        subtitleChunks.clear();
+        failedSubtitleChunks.clear();
+        renderedTrack = null;
+        subtitler = null;
+        loadingChunkUs = -1;
+        subtitleEndUs = Long.MAX_VALUE;
+        displayedTimestampUs = 0;
         view.setSubtitleStatus("");
         onFrameReady(null);
         view.setPlaybackControlsDisabled(false);
@@ -161,35 +174,86 @@ public class VideoPlayerController {
         // Let an already requested transcription finish when hidden, so enabling again can reuse paid work.
         subtitlesEnabled = !subtitlesEnabled;
         view.showSubtitlesEnabled(subtitlesEnabled);
+        if (subtitlesEnabled) {
+            failedSubtitleChunks.clear();
+        }
+
         requestSubtitles();
         updateSubtitles();
     }
 
+    /**
+     * Loads the displayed chunk first, then keeps one chunk ahead ready when possible.
+     * A seek replaces unrelated work, cached chunks stay available for backward seeking.
+     */
     private void requestSubtitles() {
-        if (!subtitlesEnabled || subtitleFile == null || subtitlesRequested || subtitlesLoaded) {
+        if (!subtitlesEnabled || subtitleFile == null) {
             return;
         }
 
-        // Loading is independent of playback. Only the loader's current video may deliver callbacks.
-        subtitlesRequested = true;
-        view.setSubtitleStatus("Loading subtitles...");
+        long current = displayedTimestampUs / CHUNK_DURATION_US * CHUNK_DURATION_US;
+        long target = subtitleChunks.containsKey(current) ? current + CHUNK_DURATION_US : current;
+        if (loadingChunkUs == target) {
+            return;
+        }
 
-        subtitleLoader.load(subtitleFile, track -> {
-            subtitlesRequested = false;
-            subtitlesLoaded = true;
-            subtitler = new FrameSubtitler(track);
-            view.setSubtitleStatus(track.isEmpty() ? "No speech in opening clip" : "Subtitles ready (opening 30 seconds)");
+        // Don't let an old prefetch hold up the chunk needed after a seek.
+        if (loadingChunkUs != -1) {
+            subtitleLoader.cancel();
+            loadingChunkUs = -1;
+        }
+
+        if (target >= subtitleEndUs || subtitleChunks.containsKey(target)) {
+            view.setSubtitleStatus("Subtitles ready");
+            return;
+        }
+
+        if (failedSubtitleChunks.contains(target)) {
+            view.setSubtitleStatus("Subtitles unavailable, toggle off and on to retry");
+            return;
+        }
+
+        loadingChunkUs = target;
+        view.setSubtitleStatus(target == current ? "Loading subtitles..." : "Loading next subtitles...");
+
+        subtitleLoader.load(subtitleFile, target, chunk -> {
+            loadingChunkUs = -1;
+            subtitleChunks.put(target, chunk.track());
+            if (chunk.last()) {
+                subtitleEndUs = Math.min(subtitleEndUs, target + CHUNK_DURATION_US);
+            }
+
+            view.setSubtitleStatus("Subtitles ready");
             updateSubtitles();
+            requestSubtitles();
         }, message -> {
-            subtitlesRequested = false;
+            loadingChunkUs = -1;
+            // Frames keep arriving after an error, wait for an explicit toggle before retrying this chunk.
+            failedSubtitleChunks.add(target);
             view.setSubtitleStatus(message);
         });
     }
 
+    /** Selects captions using the displayed frame's time, keeping only one rendered track in memory. */
     private void updateSubtitles() {
         Image caption = null;
         if (subtitlesEnabled && displayedFrame != null) {
-            caption = subtitler.captionImage((int) displayedFrame.getWidth(), (int) displayedFrame.getHeight(), displayedTimestampUs);
+            long current = displayedTimestampUs / CHUNK_DURATION_US * CHUNK_DURATION_US;
+            SubtitleTrack track = subtitleChunks.get(current);
+            if ((track == null || track.findCue(displayedTimestampUs) == null) && current >= CHUNK_DURATION_US) {
+                // A final cue may extend slightly past its chunk to meet the minimum display duration.
+                track = subtitleChunks.get(current - CHUNK_DURATION_US);
+            }
+
+            if (track != renderedTrack) {
+                // Retain caption text for seeking, but keep rendered image memory limited to one track.
+                renderedTrack = track;
+                subtitler = track == null ? null : new FrameSubtitler(track);
+            }
+
+            if (subtitler != null) {
+                caption = subtitler.captionImage((int) displayedFrame.getWidth(), (int) displayedFrame.getHeight(), displayedTimestampUs);
+            }
         }
 
         view.setSubtitleImage(caption);
@@ -211,6 +275,7 @@ public class VideoPlayerController {
         if (image != null) {
             // Save the time with the image: a seek can change the model's position before its next frame arrives.
             displayedTimestampUs = model.getCurrentTimestampUs();
+            requestSubtitles();
         }
 
         updateSubtitles();

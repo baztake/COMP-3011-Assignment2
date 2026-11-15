@@ -17,7 +17,7 @@ import java.util.Objects;
 public record SubtitleTranscript(Double duration, List<Word> words, List<Segment> segments) {
     public SubtitleTranscript {
         if (duration == null || !Double.isFinite(duration) || duration <= 0 || duration > 31) {
-            throw new IllegalArgumentException("Invalid opening chunk duration");
+            throw new IllegalArgumentException("Invalid audio chunk duration");
         }
 
         // Records do not make their lists immutable automatically; snapshot these before sharing the result.

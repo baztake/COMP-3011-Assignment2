@@ -17,22 +17,31 @@ import javax.sound.sampled.AudioSystem;
  */
 public final class SubtitleAudioExtractor {
 
+    public static final long CHUNK_DURATION_US = 30_000_000;
     private static final int SAMPLE_RATE = 16_000;
     private static final int MAX_SAMPLES = SAMPLE_RATE * 30;
 
     /**
-     * Produces at most 30 seconds of audio.
+     * Produces at most 30 seconds of audio from the requested video position.
      *
      * @param file original video file
-     * @return opening audio on the video's logical timeline, or null if it has no audio in this interval
+     * @param startUs chunk start on the video's logical timeline in microseconds
+     * @return bounded audio, an empty WAV array means there is no audio in this interval
+     * @throws IllegalArgumentException if the starting position is negative
      * @throws Exception if decoding, WAV writing or cancellation fails
      */
-    public AudioChunk extract(File file) throws Exception {
+    public AudioChunk extract(File file, long startUs) throws Exception {
+        if (startUs < 0) {
+            throw new IllegalArgumentException("Negative audio chunk position");
+        }
+
         checkInterrupted();
 
-        long videoOrigin = firstVideoTimestamp(file);
+        VideoTiming timing = videoTiming(file);
+        long chunkOrigin = Math.addExact(timing.originUs(), startUs);
         byte[] pcm = new byte[MAX_SAMPLES * Short.BYTES];
         int usedSamples = 0;
+        boolean last = timing.durationUs() > 0 && startUs >= timing.durationUs() - CHUNK_DURATION_US;
 
         checkInterrupted();
         FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(file);
@@ -40,20 +49,22 @@ public final class SubtitleAudioExtractor {
         grabber.setSampleRate(SAMPLE_RATE);
         grabber.setAudioChannels(1);
         try (AudioDecoder audio = new AudioDecoder(grabber)) {
-            audio.open(0);
+            // Seek slightly early so a packet crossing the chunk boundary can still be trimmed accurately.
+            audio.open(startUs == 0 ? 0 : Math.max(0, chunkOrigin - 1_000_000));
 
             if (!audio.hasAudio()) {
-                return null;
+                return new AudioChunk(new byte[0], startUs, 0, true);
             }
 
             while (true) {
                 checkInterrupted();
                 AudioDecoder.DecodedAudio packet = audio.read();
                 if (packet == null) {
+                    last = true;
                     break;
                 }
 
-                long firstSample = Math.round((packet.timestampUs() - videoOrigin) * (SAMPLE_RATE / 1_000_000.0));
+                long firstSample = Math.round((packet.timestampUs() - chunkOrigin) * (SAMPLE_RATE / 1_000_000.0));
                 if (firstSample >= MAX_SAMPLES) {
                     break;
                 }
@@ -77,20 +88,20 @@ public final class SubtitleAudioExtractor {
 
         checkInterrupted();
         if (usedSamples == 0) {
-            return null;
+            return new AudioChunk(new byte[0], startUs, 0, last);
         }
 
-        return new AudioChunk(writeWav(pcm, usedSamples), 0, usedSamples * 1_000_000L / SAMPLE_RATE);
+        return new AudioChunk(writeWav(pcm, usedSamples), startUs, usedSamples * 1_000_000L / SAMPLE_RATE, last);
     }
 
     /**
-     * Finds playback's position zero using an independent reader.
+     * Finds playback's position zero and duration using an independent reader.
      *
      * @param file original video
-     * @return first video timestamp in microseconds
+     * @return first video timestamp and media duration in microseconds
      * @throws Exception if the video cannot be opened or has no frames
      */
-    private long firstVideoTimestamp(File file) throws Exception {
+    private VideoTiming videoTiming(File file) throws Exception {
         try (VideoDecoder video = new VideoDecoder(new FFmpegFrameGrabber(file), VideoDecoder.mediaName(file))) {
             video.open(0);
             VideoDecoder.DecodedFrame first = video.read();
@@ -98,7 +109,7 @@ public final class SubtitleAudioExtractor {
                 throw new IOException("No video frames found");
             }
 
-            return first.info().timestampUs();
+            return new VideoTiming(first.info().timestampUs(), video.durationUs());
         }
     }
 
@@ -131,7 +142,11 @@ public final class SubtitleAudioExtractor {
      * @param wav        encoded audio
      * @param offsetUs   media offset of the chunk
      * @param durationUs encoded duration
+     * @param last whether this is the final chunk, or the file has no audio stream
      */
-    public record AudioChunk(byte[] wav, long offsetUs, long durationUs) {
+    public record AudioChunk(byte[] wav, long offsetUs, long durationUs, boolean last) {
+    }
+
+    private record VideoTiming(long originUs, long durationUs) {
     }
 }

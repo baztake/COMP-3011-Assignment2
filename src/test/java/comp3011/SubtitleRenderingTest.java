@@ -3,9 +3,11 @@ package comp3011;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import javafx.event.Event;
+import javafx.geometry.Bounds;
 import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.image.WritableImage;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
@@ -29,6 +31,8 @@ import java.util.List;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -69,6 +73,30 @@ class SubtitleRenderingTest {
             restoreProperty("comp3011.playback", previousMode);
             restoreProperty("comp3011.subtitles.url", previousUrl);
         }
+    }
+
+    @Test
+    void shouldKeepVideoBoundsWhenSubtitleStatusChanges() throws Exception {
+        FxToolkit.setupFixture(() -> {
+            // Assemble
+            VideoPlayerView view = new VideoPlayerView();
+            Scene layoutScene = new Scene(view.getRoot(), 960, 430);
+            BorderPane content = (BorderPane) ((StackPane) view.getRoot()).getChildren().getFirst();
+            StackPane surface = (StackPane) content.getCenter();
+            ImageView video = (ImageView) surface.getChildren().getFirst();
+            view.setImage(new WritableImage(1920, 800));
+            layoutScene.getRoot().resize(960, 430);
+            layoutScene.getRoot().applyCss();
+            layoutScene.getRoot().layout();
+            Bounds original = video.getBoundsInParent();
+
+            // Act
+            view.setSubtitleStatus("Loading subtitles...");
+            layoutScene.getRoot().layout();
+
+            // Assert
+            assertThat(video.getBoundsInParent()).isEqualTo(original);
+        });
     }
 
     @Test
@@ -129,8 +157,58 @@ class SubtitleRenderingTest {
         });
     }
 
+    @Test
+    void shouldReusePrefetchedCaptionsAfterSeekingBackwards(@TempDir Path directory) throws Exception {
+        // Assemble: load the opening chunk and its prefetch, then seek into the second chunk.
+        playAndPause(directory, 35);
+        Image openingCaption = FxToolkit.setupFixture(() -> captionImage.getImage());
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+            server.verify(2, postRequestedFor(urlEqualTo("/api/v1/subtitles"))));
+        seekForward(6);
+        await().atMost(Duration.ofSeconds(5)).until(() -> FxToolkit.setupFixture(() ->
+            captionImage.getImage() != null && captionImage.getImage() != openingCaption));
+        Image laterFrame = FxToolkit.setupFixture(() -> videoImage.getImage());
+
+        // Act
+        FxToolkit.setupFixture(() -> controller.getView().getStartOverButton().fire());
+
+        // Assert: returning to the opening chunk must not upload it again.
+        await().atMost(Duration.ofSeconds(5)).until(() -> FxToolkit.setupFixture(() ->
+            videoImage.getImage() != laterFrame && captionImage.getImage() != null));
+        server.verify(2, postRequestedFor(urlEqualTo("/api/v1/subtitles")));
+    }
+
+    @Test
+    void shouldLoadAnUncachedChunkAfterSeeking(@TempDir Path directory) throws Exception {
+        // Assemble
+        playAndPause(directory, 65);
+        Image openingCaption = FxToolkit.setupFixture(() -> captionImage.getImage());
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+            server.verify(2, postRequestedFor(urlEqualTo("/api/v1/subtitles"))));
+
+        // Act: jump past the prefetched second chunk into the final chunk.
+        seekForward(12);
+
+        // Assert
+        await().atMost(Duration.ofSeconds(5)).until(() -> FxToolkit.setupFixture(() ->
+            captionImage.getImage() != null && captionImage.getImage() != openingCaption));
+        server.verify(3, postRequestedFor(urlEqualTo("/api/v1/subtitles")));
+    }
+
     private void playAndPause(Path directory) throws Exception {
-        video = SubtitleTestMedia.video(directory, 4, true);
+        playAndPause(directory, 4);
+    }
+
+    private void seekForward(int steps) throws Exception {
+        FxToolkit.setupFixture(() -> {
+            for (int step = 0; step < steps; step++) {
+                controller.getView().getForwardFiveButton().fire();
+            }
+        });
+    }
+
+    private void playAndPause(Path directory, int seconds) throws Exception {
+        video = SubtitleTestMedia.video(directory, seconds, true);
         server.stubFor(post("/api/v1/subtitles").willReturn(okJson(SubtitleTestMedia.TRANSCRIPT)));
         System.setProperty("comp3011.playback", "multi");
         System.setProperty("comp3011.subtitles.url", server.baseUrl() + "/api/v1/subtitles");

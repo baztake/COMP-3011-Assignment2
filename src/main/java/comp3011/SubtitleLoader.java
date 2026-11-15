@@ -33,10 +33,11 @@ public final class SubtitleLoader implements AutoCloseable {
 
     /**
      * @param file   current video
-     * @param ready  receives a complete immutable track on JavaFX
+     * @param startUs chunk start on the video timeline in microseconds
+     * @param ready  receives the chunk's immutable track and end-of-media flag on JavaFX
      * @param failed receives a safe failure message on JavaFX
      */
-    public void load(File file, Consumer<SubtitleTrack> ready, Consumer<String> failed) {
+    public void load(File file, long startUs, Consumer<LoadedChunk> ready, Consumer<String> failed) {
         if (closed) {
             return;
         }
@@ -48,10 +49,10 @@ public final class SubtitleLoader implements AutoCloseable {
             String stage = "audio extraction";
             try {
                 // Both native decoding and HTTP stay on this worker, no-audio files skip the upload.
-                log.info("Extracting opening audio for subtitles");
-                SubtitleAudioExtractor.AudioChunk audio = new SubtitleAudioExtractor().extract(file);
+                log.info("Extracting subtitle audio at {} seconds", startUs / 1_000_000);
+                SubtitleAudioExtractor.AudioChunk audio = new SubtitleAudioExtractor().extract(file, startUs);
                 SubtitleTrack track = new SubtitleTrack(List.of());
-                if (audio != null) {
+                if (audio.wav().length > 0) {
                     if (Thread.currentThread().isInterrupted()) {
                         throw new InterruptedException();
                     }
@@ -67,11 +68,11 @@ public final class SubtitleLoader implements AutoCloseable {
                         track = new SubtitleFormatter().format(transcript, audio.offsetUs());
                     }
                 } else {
-                    log.info("No opening audio found; skipping subtitle upload");
+                    log.info("No audio in subtitle chunk at {} seconds, skipping upload", startUs / 1_000_000);
                 }
 
-                log.info("Subtitle loading complete");
-                SubtitleTrack result = track;
+                log.info("Subtitle chunk complete at {} seconds, last chunk: {}", startUs / 1_000_000, audio.last());
+                LoadedChunk result = new LoadedChunk(track, audio.last());
                 // Check at delivery time too: a callback may already be queued when another file is opened.
                 Platform.runLater(() -> {
                     if (!closed && id == generation) {
@@ -85,7 +86,7 @@ public final class SubtitleLoader implements AutoCloseable {
                 log.warn("Subtitle loading failed during {}", stage, error);
                 Platform.runLater(() -> {
                     if (!closed && id == generation) {
-                        failed.accept("Subtitles unavailable; toggle off and on to retry");
+                        failed.accept("Subtitles unavailable, toggle off and on to retry");
                     }
                 });
             }
@@ -93,7 +94,7 @@ public final class SubtitleLoader implements AutoCloseable {
     }
 
     /**
-     * Cancels obsolete work without waiting on JavaFX; only the newest queued video is retained.
+     * Cancels obsolete work without waiting on JavaFX, only the newest queued chunk is retained.
      */
     public void cancel() {
         generation++;
@@ -101,7 +102,7 @@ public final class SubtitleLoader implements AutoCloseable {
             request.cancel(true);
         }
 
-        // Remove cancelled queued tasks so rapid file changes retain only the newest replacement.
+        // Remove cancelled queued tasks so rapid file changes and seeks retain only the newest replacement.
         worker.getQueue().clear();
     }
 
@@ -113,5 +114,12 @@ public final class SubtitleLoader implements AutoCloseable {
         closed = true;
         cancel();
         worker.shutdownNow();
+    }
+
+    /**
+     * @param track captions already placed on the video's timeline
+     * @param last whether loading beyond this chunk is unnecessary
+     */
+    public record LoadedChunk(SubtitleTrack track, boolean last) {
     }
 }

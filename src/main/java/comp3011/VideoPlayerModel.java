@@ -14,6 +14,7 @@ import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
 import javafx.scene.image.Image;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.FrameGrabber;
@@ -33,6 +34,7 @@ import java.util.function.Consumer;
  * callbacks supplied by its owning {@link VideoPlayerController}, keeping it
  * decoupled from the JavaFX view.
  */
+@Slf4j
 public class VideoPlayerModel implements PlaybackModel {
 
     private static final long NO_SEEK_REQUEST = -1; // Sentinel value used when no seek position is active.
@@ -412,18 +414,9 @@ public class VideoPlayerModel implements PlaybackModel {
         currentTimestampUs = logicalPlaybackBaseUs + playbackClock.relativeTimestampUs(frame.info().timestampUs());
         relativeSeekBaseUs = NO_SEEK_REQUEST;
 
-        // Dump some logging to the console once per second so that real time performance can be monitored.
+        // Timing diagnostics are optional, console writes must not hold up frame presentation.
         if (intFrameRate > 0 && frame.info().frameNumber() % intFrameRate == 0) {
-            long remainingUs = preparedFrameHeadroomUs;
-            if (remainingUs < 0) {
-                System.out.printf("Frame headroom is \u001B[31m%5dus\u001B[0m out of %dus spare.%n",
-                    remainingUs,
-                    videoFrameDurationUs);
-            } else {
-                System.out.printf("Frame headroom is \u001B[32m%5dus\u001B[0m out of %dus spare.%n",
-                    remainingUs,
-                    videoFrameDurationUs);
-            }
+            log.debug("Frame headroom is {}us out of {}us spare.", preparedFrameHeadroomUs, videoFrameDurationUs);
         }
 
         notifyFrameReady(frame.image());

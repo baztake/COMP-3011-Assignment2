@@ -101,6 +101,10 @@ Abrupt process or machine failure between provider completion and a successful s
 
 ## Verification
 
+Server logs are written to `logs/subtitle-server.log` under the working directory, with up to three rotated files.
+Console logging is disabled so a full output pipe in an automated runner cannot hold up HTTP requests.
+Set `SUBTITLE_LOG_FILE` to choose another location, or use `--logging.console.enabled=true` for an interactive console.
+
 ```powershell
 .\mvnw.cmd verify
 ```

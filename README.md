@@ -50,6 +50,46 @@ A few requirements come with this:
 * Add focused tests for cue timing and formatting, API responses, caching and usage accounting. Verify playback and
   immediate toggling under heavy effects, seeking, network loss, and recovery, then document the design and results.
 
+## Engineering tradeoffs
+
+### Immediate toggling or effect ordering
+
+I kept captions in a separate overlay so toggling them doesn't interrupt playback, even while paused. This means
+captions always sit above the other effects. Reprocessing queued frames could cause stutters, while keeping versions
+with and without captions would use more memory.
+
+### Readability or exact timing
+
+I kept the two-line, 42-character and one-to-seven-second limits. Fast speech can delay later captions, and missing word
+timings need estimates. Allowing longer lines or shorter display times could improve synchronisation instead.
+
+### Chunk size and loading ahead
+
+I chose 30-second mono WAV chunks to keep uploads small while giving Whisper enough speech context. Loading one chunk
+ahead reduces waiting, but might transcribe audio the user skips. Smaller chunks would split phrases more often and need
+more requests.
+
+### Separate readers and one worker
+
+I reused the decoder classes with separate readers so subtitle extraction doesn't interfere with playback. This costs
+extra decoding and file reads. One subtitle worker keeps thread handling simple, but slow reads can hold up later work.
+
+### Caching or memory and storage
+
+I kept loaded caption text for seeking, but only retain one rendered caption image. The server also saves results across
+sessions, with a 256-entry limit to bound storage. Evicted chunks may need another paid request. Matching exact audio
+bytes supports renamed media, but doesn't guarantee matches for trimmed or re-encoded clips.
+
+### Simple locking or parallel requests
+
+I used one server lock to prevent duplicate transcriptions. It's simple, but chunks have to wait their turn. More
+detailed locking could allow parallel requests at the cost of more complexity.
+
+### Manual retries or automatic recovery
+
+I kept playback running when subtitles fail, with an off/on toggle to retry. This avoids repeated requests on every
+frame, but needs user action after a failure.
+
 ## Implementation Log
 
 ### 1. Bring in the subtitle server
@@ -67,35 +107,47 @@ most of the renderer, with my oversight.
 ### 3. Connect the subtitle controls
 
 Connected the `-S` option, CC button and `S` key to the same subtitle setting. Kept the video frame separate from the
-caption overlay so switching subtitles off removes them straight away, even while paused. Captions currently sit
-above the other effects.
+caption overlay so switching subtitles off removes them straight away, even while paused. Captions currently sit above
+the other effects.
 
 ### 4. Extract and send the opening audio
 
 Connected the player to the local subtitle server. Started with just the first 30 seconds to keep this step manageable.
 Audio is read separately from playback and converted to a small mono WAV file. Extraction and uploads run in the
-background so they don't hold up the player. Codex helped write and review the extraction and request code.
-Later simplified the upload with Apache's multipart builder. Kept JavaCV for decoding and resampling, with Java's
-WAV writer handling the audio bytes. The extractor now reuses `AudioDecoder` with its own reader, keeping chunk timing
-and WAV creation separate from decoding. Codex helped with this cleanup too.
+background so they don't hold up the player. Codex helped write and review the extraction and request code. Later
+simplified the upload with Apache's multipart builder. Kept JavaCV for decoding and resampling, with Java's WAV writer
+handling the audio bytes. The extractor now reuses `AudioDecoder` with its own reader, keeping chunk timing and WAV
+creation separate from decoding. Codex helped with this cleanup too.
 
 ### 5. Turn the response into captions
 
-Added formatting to group timed words into phrases, using up to two lines of 42 characters and a display time of one
-to seven seconds. Missing word timings use estimates from the phrase timing. Very fast speech can push later captions
-back a little to keep them readable. Codex helped implement and review these rules.
+Added formatting to group timed words into phrases, using up to two lines of 42 characters and a display time of one to
+seven seconds. Missing word timings use estimates from the phrase timing. Very fast speech can push later captions back
+a little to keep them readable. Codex helped implement and review these rules.
 
 ### 6. Load captions into the player
 
 Added background loading and checks to stop results from an old video appearing on a new one. Loaded captions can be
 reused after pausing, seeking or toggling them off. Server errors leave playback running, toggling off and on retries
-the request. Codex helped implement this step and review the thread handling. Loading beyond the opening chunk and
-automatic retries are still to do.
+the request. Codex helped implement this step and review the thread handling. This started with only the opening chunk,
+then was extended in step 8. Automatic retries are still to do.
 
 ### 7. Reuse the decoding and effect setup
 
-Reused `VideoDecoder` to find the first video timestamp, alongside the extractor's separate `AudioDecoder`.
-Moved repeated effect-chain setup into a small factory so both playback modes use the same ordering and occurrence
-counts, with fresh processors for each owner. Media names now come from one helper in `VideoDecoder`.
-Codex helped identify and make these changes.
+Reused `VideoDecoder` to find the first video timestamp, alongside the extractor's separate `AudioDecoder`. Moved
+repeated effect-chain setup into a small factory so both playback modes use the same ordering and occurrence counts,
+with fresh processors for each owner. Media names now come from one helper in `VideoDecoder`. Codex helped identify and
+make these changes.
+
+### 8. Load further chunks and handle seeking
+
+Added loading beyond the first 30 seconds. The extractor seeks to a requested chunk and keeps its audio aligned with the
+video. The player loads the displayed chunk first, then prepares one chunk ahead. Seeking replaces unrelated work, while
+loaded captions stay available for replay and backward seeking. Empty chunks are remembered too, and loading stops at
+the end of the audio.
+
+Kept the single subtitle worker and cached caption text rather than an image for every chunk. Failed chunks wait for an
+off/on toggle before retrying, so a server error doesn't trigger requests on every frame. Basic tests cover later audio
+extraction, prefetching and seeking in the multithreaded player. Codex helped implement and review this step. Chunk
+boundaries can split a spoken phrase, and slow transcription can still leave gaps while captions load.
 

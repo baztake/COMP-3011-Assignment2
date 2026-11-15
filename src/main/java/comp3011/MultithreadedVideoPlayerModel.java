@@ -6,6 +6,7 @@ package comp3011;
 import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
 import javafx.scene.image.Image;
+import lombok.extern.slf4j.Slf4j;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 
 import java.io.File;
@@ -23,6 +24,7 @@ import java.util.function.Consumer;
  * A single lifecycle thread serialises session replacement and resource termination.
  * Generation checks prevent obsolete sessions publishing frames or state after a seek or stop.
  */
+@Slf4j
 public class MultithreadedVideoPlayerModel implements PlaybackModel {
 
     private static final long NO_POSITION = -1;
@@ -488,7 +490,7 @@ public class MultithreadedVideoPlayerModel implements PlaybackModel {
         currentTimestampUs = logicalPlaybackBaseUs + Math.max(0, frame.info().timestampUs() - firstVideoTimestampUs);
         relativeSeekBaseUs = NO_POSITION;
         if (preparedHeadroomUs != NO_HEADROOM && videoInfo != null && videoInfo.intFrameRate() > 0 && frame.info().frameNumber() % videoInfo.intFrameRate() == 0) {
-            System.out.printf("Frame headroom is %dus out of %dus spare.%n", preparedHeadroomUs, videoFrameDurationUs);
+            log.debug("Frame headroom is {}us out of {}us spare.", preparedHeadroomUs, videoFrameDurationUs);
         }
         frameReadyHandler.accept(frame.image());
     }

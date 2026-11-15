@@ -42,7 +42,7 @@ public final class SubtitleClient implements AutoCloseable {
     public SubtitleTranscript transcribe(byte[] wav) throws IOException, InterruptedException {
         // Build request
         HttpEntity multipart = MultipartEntityBuilder.create()
-            .addBinaryBody("file", wav, ContentType.create("audio/wav"), "opening.wav")
+            .addBinaryBody("file", wav, ContentType.create("audio/wav"), "audio.wav")
             .build();
         ByteArrayOutputStream body = new ByteArrayOutputStream();
         multipart.writeTo(body);
