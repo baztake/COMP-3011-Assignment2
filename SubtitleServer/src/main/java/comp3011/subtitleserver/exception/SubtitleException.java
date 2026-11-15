@@ -1,4 +1,4 @@
-/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. */
+/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol). */
 package comp3011.subtitleserver.exception;
 
 import org.springframework.http.HttpStatus;

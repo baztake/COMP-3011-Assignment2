@@ -1,5 +1,5 @@
 /*
- * Audio decoding prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex.
+ * Audio decoding prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol).
  */
 package comp3011;
 
@@ -106,7 +106,7 @@ public class AudioDecoder implements AutoCloseable {
 
     /**
      * Holds copied PCM bytes and the timestamp captured during decoding.
-     * AudioOutput owns the samples after successful submission.
+     * The caller owns the samples and can retain them across later reads.
      *
      * @param timestampUs media timestamp in microseconds
      * @param samples copied interleaved PCM bytes

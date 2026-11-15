@@ -1,9 +1,8 @@
-/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. Adapted from Assignment 1. */
+/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol). Adapted from Assignment 1. */
 package comp3011.subtitleserver.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.ErrorResponse;
@@ -13,8 +12,8 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /** Produces safe JSON errors without forwarding provider bodies or stack traces. */
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
-    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     /**
      * @param error safe application failure
      * @param request current HTTP request
@@ -47,6 +46,8 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ApiError> response(int status, String message, HttpServletRequest request) {
+        // These messages are generated locally, rather than copied from a provider response.
+        log.warn("{} {} failed: HTTP {} - {}", request.getMethod(), request.getRequestURI(), status, message);
         return ResponseEntity.status(status).body(new ApiError(status, message, request.getRequestURI()));
     }
 

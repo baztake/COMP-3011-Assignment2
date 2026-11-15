@@ -4,7 +4,7 @@
  *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. Bailey Staykov, a1886621, with assistance from OpenAI Codex
+ *   2. Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol)
  *
  * Copyright 2026 Simon Ratcliffe
  */
@@ -25,6 +25,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
 import javafx.scene.shape.Polygon;
@@ -43,11 +44,13 @@ import javafx.scene.shape.StrokeLineCap;
  * </p>
  */
 public class VideoPlayerView {
+
     private static final int ICON_SIZE = 28;
 
     private final ImageView imageView = new ImageView();
     private final ImageView subtitleView = new ImageView();
     private final Label statusLabel = new Label("No video loaded");
+    private final Label subtitleStatusLabel = new Label();
     private final Label tooltipLabel = new Label();
     private final Pane tooltipLayer = new Pane();
     private final StackPane videoPane;
@@ -98,9 +101,19 @@ public class VideoPlayerView {
 
         controls.setPadding(new Insets(10));
 
+        // Keep long network-status messages below the controls so they do not widen the player window.
+        subtitleStatusLabel.setWrapText(true);
+        subtitleStatusLabel.setMinWidth(0);
+        subtitleStatusLabel.setPrefWidth(0);
+        subtitleStatusLabel.setMaxWidth(Double.MAX_VALUE);
+        subtitleStatusLabel.setVisible(false);
+        subtitleStatusLabel.managedProperty().bind(subtitleStatusLabel.visibleProperty());
+        VBox bottom = new VBox(controls, subtitleStatusLabel);
+        VBox.setMargin(subtitleStatusLabel, new Insets(0, 10, 5, 10));
+
         BorderPane content = new BorderPane();
         content.setCenter(videoPane);
-        content.setBottom(controls);
+        content.setBottom(bottom);
 
         configureTooltipLabel();
 
@@ -158,6 +171,12 @@ public class VideoPlayerView {
     /** @param image transparent caption layer, or null to remove subtitles immediately */
     public void setSubtitleImage(Image image) {
         subtitleView.setImage(image);
+    }
+
+    /** @param status subtitle loading state, separate from the changing playback status */
+    public void setSubtitleStatus(String status) {
+        subtitleStatusLabel.setText(status);
+        subtitleStatusLabel.setVisible(!status.isBlank());
     }
 
     public void setVideoDisplaySize(double width, double height) {

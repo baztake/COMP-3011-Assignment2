@@ -1,9 +1,10 @@
-/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. Adapted from Assignment 1. */
+/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol). Adapted from Assignment 1. */
 package comp3011.subtitleserver.controller;
 
 import comp3011.subtitleserver.dto.SubtitleResponse;
 import comp3011.subtitleserver.service.SubtitleService;
 import comp3011.subtitleserver.service.SubtitleStore;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
  * Exposes only the two Assignment 3 API endpoints.
  */
 @RestController
+@Slf4j
 public class SubtitleController {
 
     private final SubtitleService service;
@@ -38,7 +40,10 @@ public class SubtitleController {
         produces = MediaType.APPLICATION_JSON_VALUE
     )
     public SubtitleResponse subtitles(@RequestPart("file") MultipartFile file) {
-        return service.transcribe(file);
+        log.info("POST /api/v1/subtitles: received {} bytes", file.getSize());
+        SubtitleResponse response = service.transcribe(file);
+        log.info("Subtitle response ready: {} words, {} segments", response.words().size(), response.segments().size());
+        return response;
     }
 
     /**
@@ -46,7 +51,9 @@ public class SubtitleController {
      */
     @GetMapping(value = "/api/v1/global/usage", produces = MediaType.APPLICATION_JSON_VALUE)
     public UsageResponse usage() {
-        return new UsageResponse(store.getUsage());
+        double seconds = store.getUsage();
+        log.info("GET /api/v1/global/usage: {} seconds", seconds);
+        return new UsageResponse(seconds);
     }
 
     /**

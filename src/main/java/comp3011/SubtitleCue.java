@@ -1,4 +1,4 @@
-/* Subtitle support prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. */
+/* Subtitle support prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol). */
 package comp3011;
 
 import java.util.Objects;
@@ -12,10 +12,9 @@ import java.util.Objects;
  */
 public record SubtitleCue(long startUs, long endUs, String text) {
     public SubtitleCue {
+        // Validation, reject invalid subtitles
         Objects.requireNonNull(text, "text");
-        // Cues arrive already formatted; reject invalid data rather than silently dropping text here.
-        if (startUs < 0 || endUs <= startUs || endUs - startUs < 1_000_000L
-            || endUs - startUs > 7_000_000L) {
+        if (startUs < 0 || endUs <= startUs || endUs - startUs < 1_000_000L || endUs - startUs > 7_000_000L) {
             throw new IllegalArgumentException("Subtitle duration must be between one and seven seconds");
         }
         String[] lines = text.split("\n", -1);

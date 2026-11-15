@@ -1,4 +1,4 @@
-/* Subtitle support prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. */
+/* Subtitle support prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol). */
 package comp3011;
 
 import java.util.Comparator;
@@ -6,6 +6,7 @@ import java.util.List;
 
 /** Immutable cues safe to share between workers. Lookup also supports backwards seeking. */
 public final class SubtitleTrack {
+
     private final List<SubtitleCue> cues;
 
     /**
@@ -42,20 +43,13 @@ public final class SubtitleTrack {
                 return cue;
             }
         }
+
         return null;
     }
 
-    /**
-     * Temporary captions for exercising controls; these are not dialogue transcriptions.
-     *
-     * @return a short demonstration track
-     */
-    public static SubtitleTrack sample() {
-        return new SubtitleTrack(List.of(
-            new SubtitleCue(0, 3_000_000L, "Sample subtitles: local rendering test."),
-            new SubtitleCue(3_000_000L, 6_000_000L, "Press S to toggle these captions."),
-            new SubtitleCue(7_000_000L, 11_000_000L, "Pause or seek to test subtitle timing.\nThese captions are not the dialogue."),
-            new SubtitleCue(12_000_000L, 16_000_000L, "Cloud transcription is the next step.")
-        ));
+    /** @return whether this track contains no speech cues */
+    public boolean isEmpty() {
+        return cues.isEmpty();
     }
+
 }

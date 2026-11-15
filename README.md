@@ -52,29 +52,43 @@ A few requirements come with this:
 
 ## Implementation Log
 
-### Subtitle server
+### 1. Bring in the subtitle server
 
-Extended and pruned the original assignment 1 server with new `POST /api/v1/subtitles` and
-`GET /api/v1/global/usage` endpoints. It uses Whisper word/segment timestamps, filters likely non-speech, and persists
-cached transcriptions and cumulative usage in seconds.
+Started with the Assignment 1 server and removed the parts this assignment didn't need. Added the subtitle and usage
+endpoints, with Whisper handling the transcription. Kept the API key on the server and saved results so replaying the
+same audio doesn't need another paid request. Starting here made it easier to check the server separately.
 
-Chose to do this first as it seemed like the most approachable part of the assignment. It also allowed for testing the
-server independently of the player.
+### 2. Get sample captions on screen
 
-### Mock subtitles milestone
+Added a small sample track first, so the display and controls could be checked before connecting real speech.
+`SubtitleTrack` picks the caption for the current video time, and `FrameSubtitler` draws it. Codex (GPT 6.1 Sol) wrote
+most of the renderer, with my oversight.
 
-The player currently uses a short sample track during the first 16 seconds of any media. These captions are labelled as
-samples and are not transcribed dialogue.
+### 3. Connect the subtitle controls
 
-* `SubtitleCue` validates already formatted text and one-to-seven-second intervals. `SubtitleTrack` holds an immutable,
-  ordered set of non-overlapping cues and looks up captions using the displayed media position, including after seeking.
-* `FrameSubtitler` was implemented almost entirely by OpenAI Codex using GPT 6.1 Sol, with oversight from myself. It was
-  simple to give it the requirements of the subtitles and have it render them with the context of the other frame
-  processors. I ensured I still understand the code and its application within the video player.
-* Both playback modes support this milestone. Other effects keep their existing ordering, but captions currently appear
-  above all effects regardless of the position or repetition of `-S`. Ordered subtitle/effect composition remains to be
-  integrated before Assignment 3 is complete.
-* The player still needs audio extraction, cloud requests, transcription formatting, and network recovery. Its sample
-  track makes no network requests or API charges. The server-side transcription and cache are implemented separately.
+Connected the `-S` option, CC button and `S` key to the same subtitle setting. Kept the video frame separate from the
+caption overlay so switching subtitles off removes them straight away, even while paused. Captions currently sit
+above the other effects.
 
+### 4. Extract and send the opening audio
+
+Connected the player to the local subtitle server. Started with just the first 30 seconds to keep this step manageable.
+Audio is read separately from playback and converted to a small mono WAV file. Extraction and uploads run in the
+background so they don't hold up the player. Codex helped write and review the extraction and request code.
+Later simplified the upload with Apache's multipart builder. Kept JavaCV for decoding and resampling, with Java's
+WAV writer handling the audio bytes. The extractor now reuses `AudioDecoder` with its own reader, keeping chunk timing
+and WAV creation separate from decoding. Codex helped with this cleanup too.
+
+### 5. Turn the response into captions
+
+Added formatting to group timed words into phrases, using up to two lines of 42 characters and a display time of one
+to seven seconds. Missing word timings use estimates from the phrase timing. Very fast speech can push later captions
+back a little to keep them readable. Codex helped implement and review these rules.
+
+### 6. Load captions into the player
+
+Added background loading and checks to stop results from an old video appearing on a new one. Loaded captions can be
+reused after pausing, seeking or toggling them off. Server errors leave playback running, toggling off and on retries
+the request. Codex helped implement this step and review the thread handling. Loading beyond the opening chunk and
+automatic retries are still to do.
 

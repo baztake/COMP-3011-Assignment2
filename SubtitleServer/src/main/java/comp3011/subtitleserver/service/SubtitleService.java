@@ -1,4 +1,4 @@
-/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. Adapted from Assignment 1. */
+/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol). Adapted from Assignment 1. */
 package comp3011.subtitleserver.service;
 
 import comp3011.subtitleserver.dto.OpenAiTranscriptionResult;
@@ -6,6 +6,7 @@ import comp3011.subtitleserver.dto.OpenAiTranscriptionResult.Segment;
 import comp3011.subtitleserver.dto.OpenAiTranscriptionResult.Word;
 import comp3011.subtitleserver.dto.SubtitleResponse;
 import comp3011.subtitleserver.exception.SubtitleException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
  * Validates uploads, reuses transcriptions and filters probable non-speech.
  */
 @Service
+@Slf4j
 public class SubtitleService {
 
     private static final long MAX_BYTES = 24L * 1024 * 1024;
@@ -60,6 +62,7 @@ public class SubtitleService {
         String key = contentKey(audio);
         SubtitleResponse cached = store.find(key);
         if (cached != null) {
+            log.info("Subtitle cache hit; skipping Whisper request");
             return cached;
         }
 
@@ -67,14 +70,17 @@ public class SubtitleService {
             // Another request may have saved this chunk while we were waiting for the lock.
             cached = store.find(key);
             if (cached != null) {
+                log.info("Subtitle cache filled by another request; skipping Whisper request");
                 return cached;
             }
 
+            log.info("Subtitle cache miss, requesting Whisper transcription");
             OpenAiTranscriptionResult result = provider.transcribe(audio);
 
             SubtitleResponse response = filterSpeech(result);
             // Count original input, even if every segment was suppressed. Hits never reach this call.
             store.record(key, response, result.usageSeconds());
+            log.info("Subtitle result saved, recorded {} seconds of transcription usage", result.usageSeconds());
 
             return response;
         }

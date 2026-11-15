@@ -28,11 +28,16 @@ import java.util.function.BiConsumer;
  * </p>
  */
 public class VideoPlayerController {
+
     private final PlaybackModel model;
     private final VideoPlayerView view;
     private final BiConsumer<Integer, Integer> videoSizeChangedHandler;
     // JavaFX owns this state. Captions stay separate from decoded frames so toggles do not restart playback.
-    private final FrameSubtitler subtitler = new FrameSubtitler(SubtitleTrack.sample());
+    private FrameSubtitler subtitler = new FrameSubtitler();
+    private final SubtitleLoader subtitleLoader = new SubtitleLoader();
+    private File subtitleFile;
+    private boolean subtitlesRequested;
+    private boolean subtitlesLoaded;
     private boolean subtitlesEnabled;
     private Image displayedFrame;
     private long displayedTimestampUs;
@@ -45,7 +50,7 @@ public class VideoPlayerController {
         this.view = new VideoPlayerView();
         this.videoSizeChangedHandler = videoSizeChangedHandler;
         subtitlesEnabled = frameEffects.contains(FrameEffect.SUBTITLE);
-        // For this local milestone, captions use a separate display layer above the existing effects.
+        // Captions use a separate display layer above the existing effects.
         // Applying effects after subtitles in CLI order still needs to be integrated.
         List<FrameEffect> playbackEffects = frameEffects.stream()
             .filter(effect -> effect != FrameEffect.SUBTITLE).toList();
@@ -53,6 +58,7 @@ public class VideoPlayerController {
         if (!mode.equalsIgnoreCase("single") && !mode.equalsIgnoreCase("multi")) {
             throw new IllegalArgumentException("comp3011.playback must be single or multi");
         }
+
         if (mode.equalsIgnoreCase("single")) {
             model = new VideoPlayerModel(
                 audioEnabled,
@@ -113,12 +119,20 @@ public class VideoPlayerController {
     }
 
     public void play(File file) {
+        subtitleLoader.cancel();
+        subtitleFile = file;
+        subtitlesRequested = false;
+        subtitlesLoaded = false;
+        subtitler = new FrameSubtitler();
+        view.setSubtitleStatus("");
         onFrameReady(null);
         view.setPlaybackControlsDisabled(false);
         model.play(file);
+        requestSubtitles();
     }
 
     public void shutdown() {
+        subtitleLoader.close();
         model.shutdown();
     }
 
@@ -144,9 +158,32 @@ public class VideoPlayerController {
 
     /** Shows or hides the caption layer without changing the displayed video frame. */
     private void toggleSubtitles() {
+        // Let an already requested transcription finish when hidden, so enabling again can reuse paid work.
         subtitlesEnabled = !subtitlesEnabled;
         view.showSubtitlesEnabled(subtitlesEnabled);
+        requestSubtitles();
         updateSubtitles();
+    }
+
+    private void requestSubtitles() {
+        if (!subtitlesEnabled || subtitleFile == null || subtitlesRequested || subtitlesLoaded) {
+            return;
+        }
+
+        // Loading is independent of playback. Only the loader's current video may deliver callbacks.
+        subtitlesRequested = true;
+        view.setSubtitleStatus("Loading subtitles...");
+
+        subtitleLoader.load(subtitleFile, track -> {
+            subtitlesRequested = false;
+            subtitlesLoaded = true;
+            subtitler = new FrameSubtitler(track);
+            view.setSubtitleStatus(track.isEmpty() ? "No speech in opening clip" : "Subtitles ready (opening 30 seconds)");
+            updateSubtitles();
+        }, message -> {
+            subtitlesRequested = false;
+            view.setSubtitleStatus(message);
+        });
     }
 
     private void updateSubtitles() {
@@ -154,10 +191,12 @@ public class VideoPlayerController {
         if (subtitlesEnabled && displayedFrame != null) {
             caption = subtitler.captionImage((int) displayedFrame.getWidth(), (int) displayedFrame.getHeight(), displayedTimestampUs);
         }
+
         view.setSubtitleImage(caption);
     }
 
     private void stopAndExit() {
+        subtitleLoader.close();
         model.stopPlayback();
         javafx.application.Platform.exit();
     }
@@ -173,6 +212,7 @@ public class VideoPlayerController {
             // Save the time with the image: a seek can change the model's position before its next frame arrives.
             displayedTimestampUs = model.getCurrentTimestampUs();
         }
+
         updateSubtitles();
     }
 

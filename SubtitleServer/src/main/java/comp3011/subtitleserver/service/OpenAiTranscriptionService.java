@@ -1,8 +1,9 @@
-/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. Adapted from Assignment 1. */
+/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol). Adapted from Assignment 1. */
 package comp3011.subtitleserver.service;
 
 import comp3011.subtitleserver.dto.OpenAiTranscriptionResult;
 import comp3011.subtitleserver.exception.SubtitleException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpEntity;
@@ -27,6 +28,7 @@ import java.util.Locale;
  * Performs one bounded Whisper request; failures are not automatically retried or billed locally.
  */
 @Service
+@Slf4j
 public class OpenAiTranscriptionService {
 
     private final RestClient client;
@@ -48,11 +50,13 @@ public class OpenAiTranscriptionService {
      */
     public OpenAiTranscriptionResult transcribe(MultipartFile audio) {
         if (apiKey.isBlank()) {
+            log.warn("Cannot call Whisper: OPENAI_API_KEY is not configured");
             throw new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE, "Set OPENAI_API_KEY on the subtitle server");
         }
 
         // Do not retry, cloud may have processed audio before a connection failed.
         try {
+            log.info("Sending audio to Whisper (whisper-1, word and segment timings)");
             OpenAiTranscriptionResult result = client.post()
                 .uri("/audio/transcriptions")
                 .contentType(MediaType.MULTIPART_FORM_DATA)
@@ -63,10 +67,14 @@ public class OpenAiTranscriptionService {
                 throw new SubtitleException(HttpStatus.BAD_GATEWAY, "Transcription provider returned no data");
             }
 
+            log.info("Whisper transcription received: {} seconds of audio", result.duration());
             return result;
         } catch (RestClientResponseException error) {
+            // Log the status only; provider bodies may contain sensitive request details.
+            log.warn("Whisper request failed: HTTP {}", error.getStatusCode().value());
             throw providerFailure(error.getStatusCode().value());
         } catch (RestClientException | IllegalArgumentException error) {
+            log.warn("Whisper request failed: {}", error.getClass().getSimpleName());
             if (isConnectionFailure(error)) {
                 throw new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE, "Cannot reach transcription provider; retry later");
             }

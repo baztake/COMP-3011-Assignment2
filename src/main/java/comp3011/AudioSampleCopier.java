@@ -3,7 +3,7 @@
  *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. Bailey Staykov, a1886621, with assistance from OpenAI Codex.
+ *   2. Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol).
  *
  * Copyright 2026 Simon Ratcliffe
  */

@@ -1,4 +1,4 @@
-/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. Adapted from Assignment 1. */
+/* Subtitle server prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol). Adapted from Assignment 1. */
 package comp3011.subtitleserver;
 
 import org.springframework.beans.factory.annotation.Value;

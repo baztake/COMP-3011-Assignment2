@@ -13,8 +13,8 @@ From this directory, set `OPENAI_API_KEY` in the process environment or IntelliJ
 ```
 
 The server listens on `127.0.0.1:8080`. Without a key, it can serve existing cached transcriptions and report usage, but
-returns 503 for a cache miss. The key is never sent to the player or written to the cache. The video player currently
-still uses its sample subtitle track; its background audio extraction and HTTP client are a separate integration step.
+returns 503 for a cache miss. The key is never sent to the player or written to the cache. The video player now uploads
+an opening audio chunk in the background; the current milestone covers the first 30 seconds only.
 
 ## API
 

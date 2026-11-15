@@ -1,4 +1,4 @@
-/* Subtitle support prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. */
+/* Subtitle support prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol). */
 package comp3011;
 
 import javafx.scene.image.Image;
@@ -23,17 +23,22 @@ import java.util.Objects;
  * Each owner must have its own instance because the last cue and image are cached here.
  */
 public final class FrameSubtitler extends FrameProcessor {
+
     private final SubtitleTrack track;
     private SubtitleCue cachedCue;
     private BufferedImage cachedCaption;
     private Image cachedImage;
 
-    /** Creates a processor with the temporary sample captions. */
+    /**
+     * Creates an empty processor, the controller supplies the loaded track for presentation.
+     */
     public FrameSubtitler() {
-        this(SubtitleTrack.sample());
+        this(new SubtitleTrack(java.util.List.of()));
     }
 
-    /** @param track immutable cues on the media timeline */
+    /**
+     * @param track immutable cues on the media timeline
+     */
     public FrameSubtitler(SubtitleTrack track) {
         this.track = Objects.requireNonNull(track, "track");
     }
@@ -42,17 +47,19 @@ public final class FrameSubtitler extends FrameProcessor {
      * Draws onto a caller-owned native frame. Each worker must own its processor instance.
      *
      * @param frame writable video frame
-     * @param info metadata with a timestamp relative to the beginning of the media
+     * @param info  metadata with a timestamp relative to the beginning of the media
      */
     @Override
     public void process(Frame frame, InfoFrame info) {
         if (frame.image == null) {
             return;
         }
+
         BufferedImage caption = captionAt(frame.imageWidth, frame.imageHeight, info.timestampUs());
         if (caption == null) {
             return;
         }
+
         try (Java2DFrameConverter converter = new Java2DFrameConverter()) {
             BufferedImage image = converter.convert(frame);
             Graphics2D graphics = image.createGraphics();
@@ -61,6 +68,7 @@ public final class FrameSubtitler extends FrameProcessor {
             } finally {
                 graphics.dispose();
             }
+
             Java2DFrameConverter.copy(image, frame);
         }
     }
@@ -68,8 +76,8 @@ public final class FrameSubtitler extends FrameProcessor {
     /**
      * Gets the caption layer for presentation on JavaFX. The video image remains untouched.
      *
-     * @param width video width in pixels
-     * @param height video height in pixels
+     * @param width       video width in pixels
+     * @param height      video height in pixels
      * @param timestampUs position of the displayed frame in microseconds
      * @return transparent caption image, or null during silence
      */
@@ -78,6 +86,7 @@ public final class FrameSubtitler extends FrameProcessor {
         if (caption == null) {
             return null;
         }
+
         if (cachedImage == null) {
             // Convert only when the cue or video size changes, rather than copying every video frame.
             int[] pixels = ((DataBufferInt) caption.getRaster().getDataBuffer()).getData();
@@ -85,6 +94,7 @@ public final class FrameSubtitler extends FrameProcessor {
             image.getPixelWriter().setPixels(0, 0, width, height, PixelFormat.getIntArgbInstance(), pixels, 0, width);
             cachedImage = image;
         }
+
         return cachedImage;
     }
 
@@ -93,6 +103,7 @@ public final class FrameSubtitler extends FrameProcessor {
         if (cue == null) {
             return null;
         }
+
         // Keep just one caption, so memory use does not grow with the length of the track.
         if (cachedCaption == null || !cue.equals(cachedCue)
             || cachedCaption.getWidth() != width || cachedCaption.getHeight() != height) {
@@ -100,6 +111,7 @@ public final class FrameSubtitler extends FrameProcessor {
             cachedCue = cue;
             cachedImage = null;
         }
+
         return cachedCaption;
     }
 
@@ -120,6 +132,7 @@ public final class FrameSubtitler extends FrameProcessor {
                     font = font.deriveFont(size);
                 }
             }
+
             graphics.setStroke(new BasicStroke(Math.max(1, size / 10), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             for (int index = 0; index < lines.length; index++) {
                 GlyphVector glyphs = font.createGlyphVector(graphics.getFontRenderContext(), lines[index]);
@@ -135,6 +148,7 @@ public final class FrameSubtitler extends FrameProcessor {
         } finally {
             graphics.dispose();
         }
+
         return caption;
     }
 }

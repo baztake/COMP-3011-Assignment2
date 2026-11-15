@@ -1,5 +1,5 @@
 /*
- * Concurrency documentation prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex.
+ * Concurrency documentation prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol).
  */
 package comp3011;
 

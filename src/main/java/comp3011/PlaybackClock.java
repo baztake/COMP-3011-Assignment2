@@ -1,5 +1,5 @@
 /*
- * Playback timing developed by Bailey Staykov, a1886621, with assistance from OpenAI Codex.
+ * Playback timing developed by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol).
  * Codex helped plan the required methods and their functionality, Bailey implemented them.
  */
 package comp3011;

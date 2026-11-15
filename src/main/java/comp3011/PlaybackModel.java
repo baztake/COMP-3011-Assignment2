@@ -1,4 +1,4 @@
-/* Playback model contract prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex. */
+/* Playback model contract prepared by Bailey Staykov, a1886621, with assistance from OpenAI Codex (GPT-6.1 Sol). */
 package comp3011;
 
 import java.io.File;
