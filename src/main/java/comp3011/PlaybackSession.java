@@ -8,10 +8,7 @@ import lombok.NonNull;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.FrameGrabber;
 
-import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -568,17 +565,10 @@ public class PlaybackSession {
      * @throws Exception if processor initialisation fails
      */
     private FrameProcessingWorker createWorker(InfoVideo videoInfo) throws Exception {
-        Map<FrameEffect, Integer> occurrenceCounts = new EnumMap<>(FrameEffect.class);
-        List<FrameProcessor> processors = new ArrayList<>();
-
-        for (FrameEffect effect : frameEffects) {
-            int occurrenceIndex = occurrenceCounts.getOrDefault(effect, 0);
-            FrameProcessor processor = effect.createProcessor(occurrenceIndex);
-
+        List<FrameProcessor> processors = FrameProcessorFactory.create(frameEffects);
+        for (FrameProcessor processor : processors) {
             // Initialise before publishing the processor to its worker.
             processor.initialise(videoInfo);
-            processors.add(processor);
-            occurrenceCounts.put(effect, occurrenceIndex + 1);
         }
 
         return new FrameProcessingWorker(processors);

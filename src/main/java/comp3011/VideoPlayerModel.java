@@ -98,33 +98,12 @@ public class VideoPlayerModel implements PlaybackModel {
         Consumer<Boolean> audioOutputStateChangedHandler
     ) {
         audioOutputEnabled = audioEnabled;
-        this.frameProcessors = buildFrameProcessors(frameEffects);
+        this.frameProcessors = FrameProcessorFactory.create(frameEffects);
         this.videoSizeChangedHandler = videoSizeChangedHandler;
         this.frameReadyHandler = frameReadyHandler;
         this.statusChangedHandler = statusChangedHandler;
         this.playbackStateChangedHandler = playbackStateChangedHandler;
         this.audioOutputStateChangedHandler = audioOutputStateChangedHandler;
-    }
-
-    /**
-     * Builds a processor chain in CLI order, assigning occurrence indexes separately for each effect type.
-     * Local counters ensure equivalent chains receive the same indexes, without sharing static counters between processor instances.
-     *
-     * @param frameEffects the selected frame effects in CLI order
-     * @return an unmodifiable list of newly created processors
-     */
-    private List<FrameProcessor> buildFrameProcessors(List<FrameEffect> frameEffects) {
-        Map<FrameEffect, Integer> occurrenceCounts = new EnumMap<>(FrameEffect.class);
-        List<FrameProcessor> processors = new ArrayList<>();
-
-        for (FrameEffect effect : frameEffects) {
-            int occurrenceIndex = occurrenceCounts.getOrDefault(effect, 0);
-
-            processors.add(effect.createProcessor(occurrenceIndex));
-            occurrenceCounts.put(effect, occurrenceIndex + 1);
-        }
-
-        return List.copyOf(processors);
     }
 
     public void play(File file) {
@@ -343,7 +322,7 @@ public class VideoPlayerModel implements PlaybackModel {
 
             if (!frameProcessorsInitialised) {
                 initialiseFrameProcessors(new InfoVideo(
-                    mediaName(videoFile),
+                    VideoDecoder.mediaName(videoFile),
                     totalVideoFrames,
                     frame.imageWidth,
                     frame.imageHeight,
@@ -553,15 +532,6 @@ public class VideoPlayerModel implements PlaybackModel {
             converter.close();
             converter = null;
         }
-    }
-
-    private String mediaName(File file) {
-        String fileName = file.getName();
-        int extensionStart = fileName.lastIndexOf('.');
-        if (extensionStart <= 0) {
-            return fileName;
-        }
-        return fileName.substring(0, extensionStart);
     }
 
     private long clampSeekTimestamp(long timestampUs) {

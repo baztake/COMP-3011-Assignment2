@@ -302,7 +302,7 @@ public class MultithreadedVideoPlayerModel implements PlaybackModel {
 
             next = new PlaybackSession(effects);
             ownedSession = next;
-            video = new VideoDecoder(new FFmpegFrameGrabber(file), mediaName(file));
+            video = new VideoDecoder(new FFmpegFrameGrabber(file), VideoDecoder.mediaName(file));
             int workers = Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors() - 2));
             int queueSize = Math.max(2, workers * 2);
 
@@ -558,13 +558,4 @@ public class MultithreadedVideoPlayerModel implements PlaybackModel {
         return Math.max(0, videoDurationUs - videoFrameDurationUs);
     }
 
-    /**
-     * @param file media file
-     * @return filename without its extension
-     */
-    private String mediaName(File file) {
-        String name = file.getName();
-        int extension = name.lastIndexOf('.');
-        return extension <= 0 ? name : name.substring(0, extension);
-    }
 }

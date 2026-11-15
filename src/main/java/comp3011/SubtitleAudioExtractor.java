@@ -91,13 +91,14 @@ public final class SubtitleAudioExtractor {
      * @throws Exception if the video cannot be opened or has no frames
      */
     private long firstVideoTimestamp(File file) throws Exception {
-        try (FFmpegFrameGrabber video = new FFmpegFrameGrabber(file)) {
-            video.start();
-            if (video.grabImage() == null) {
+        try (VideoDecoder video = new VideoDecoder(new FFmpegFrameGrabber(file), VideoDecoder.mediaName(file))) {
+            video.open(0);
+            VideoDecoder.DecodedFrame first = video.read();
+            if (first == null) {
                 throw new IOException("No video frames found");
             }
 
-            return video.getTimestamp();
+            return first.info().timestampUs();
         }
     }
 

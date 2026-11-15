@@ -13,6 +13,7 @@ import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.FrameGrabber;
 
+import java.io.File;
 import java.util.Objects;
 
 /**
@@ -37,6 +38,18 @@ public class VideoDecoder implements AutoCloseable {
     public VideoDecoder(FFmpegFrameGrabber grabber, String mediaName) {
         this.grabber = Objects.requireNonNull(grabber);
         this.mediaName = Objects.requireNonNull(mediaName);
+    }
+
+    /**
+     * Gets the name used in video metadata and deterministic effect seeds.
+     *
+     * @param file original media file
+     * @return filename without its final extension, preserving leading-dot names
+     */
+    static String mediaName(File file) {
+        String name = file.getName();
+        int extension = name.lastIndexOf('.');
+        return extension <= 0 ? name : name.substring(0, extension);
     }
 
     /**

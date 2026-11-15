@@ -92,3 +92,10 @@ reused after pausing, seeking or toggling them off. Server errors leave playback
 the request. Codex helped implement this step and review the thread handling. Loading beyond the opening chunk and
 automatic retries are still to do.
 
+### 7. Reuse the decoding and effect setup
+
+Reused `VideoDecoder` to find the first video timestamp, alongside the extractor's separate `AudioDecoder`.
+Moved repeated effect-chain setup into a small factory so both playback modes use the same ordering and occurrence
+counts, with fresh processors for each owner. Media names now come from one helper in `VideoDecoder`.
+Codex helped identify and make these changes.
+
