@@ -76,7 +76,7 @@ public class OpenAiTranscriptionService {
         } catch (RestClientException | IllegalArgumentException error) {
             log.warn("Whisper request failed: {}", error.getClass().getSimpleName());
             if (isConnectionFailure(error)) {
-                throw new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE, "Cannot reach transcription provider; retry later");
+                throw new SubtitleException(HttpStatus.SERVICE_UNAVAILABLE, "Cannot reach transcription provider, retry later", true);
             }
             throw new SubtitleException(HttpStatus.BAD_GATEWAY, "Transcription provider returned invalid timing data");
         }

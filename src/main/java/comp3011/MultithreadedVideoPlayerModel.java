@@ -499,6 +499,12 @@ public class MultithreadedVideoPlayerModel implements PlaybackModel {
      * Finishes playback after video and audio have drained.
      */
     private void finishPlayback() {
+        // A removed drive can look like end of input to the decoder.
+        if (videoFile != null && !videoFile.isFile()) {
+            mediaUnavailable();
+            return;
+        }
+
         long end = videoDurationUs != NO_POSITION ? videoDurationUs : currentTimestampUs;
         stopSession();
         pauseRequested = true;
@@ -526,10 +532,24 @@ public class MultithreadedVideoPlayerModel implements PlaybackModel {
      * @param failure failure to report
      */
     private void handleFailure(Throwable failure) {
+        if (videoFile != null && !videoFile.isFile()) {
+            mediaUnavailable();
+            return;
+        }
+
         stopSession();
         pauseRequested = false;
         statusChangedHandler.accept("Error: " + failure.getMessage());
         playbackStateChangedHandler.accept(false, false);
+    }
+
+    /** Keeps the last frame and position so Play can reopen the file after reinsertion. */
+    private void mediaUnavailable() {
+        stopSession();
+        pauseRequested = true;
+        relativeSeekBaseUs = NO_POSITION;
+        statusChangedHandler.accept("Media unavailable. Reconnect the drive, then press Play.");
+        playbackStateChangedHandler.accept(false, true);
     }
 
     /**

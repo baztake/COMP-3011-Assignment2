@@ -8,14 +8,24 @@ import org.springframework.http.HttpStatus;
  */
 public class SubtitleException extends RuntimeException {
     private final HttpStatus status;
+    private final boolean retryable;
 
     /**
      * @param status  response status
      * @param message safe explanation for the player
      */
     public SubtitleException(HttpStatus status, String message) {
+        this(status, message, false);
+    }
+
+    public SubtitleException(HttpStatus status, String message, boolean retryable) {
         super(message);
         this.status = status;
+        this.retryable = retryable;
+    }
+
+    public boolean isRetryable() {
+        return retryable;
     }
 
     /**

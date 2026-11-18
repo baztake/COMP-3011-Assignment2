@@ -2,6 +2,7 @@
 package comp3011;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -50,6 +51,26 @@ class SubtitleClientTest {
             // Assert
             assertThat(failure).isInstanceOf(IOException.class).hasMessageContaining("HTTP 503");
             assertThat(failure.getMessage()).doesNotContain("private details");
+            server.verify(1, postRequestedFor(urlEqualTo("/api/v1/subtitles")));
+        }
+    }
+
+    @Test
+    void shouldRetryWhenProviderConnectivityReturns() throws Exception {
+        // Assemble
+        server.stubFor(post("/api/v1/subtitles").inScenario("Recovery")
+            .whenScenarioStateIs(Scenario.STARTED).willSetStateTo("Connected")
+            .willReturn(serviceUnavailable().withHeader("Retry-After", "3")));
+        server.stubFor(post("/api/v1/subtitles").inScenario("Recovery")
+            .whenScenarioStateIs("Connected").willReturn(okJson(SubtitleTestMedia.TRANSCRIPT)));
+
+        try (SubtitleClient client = new SubtitleClient(endpoint())) {
+            // Act
+            SubtitleTranscript result = client.transcribe(new byte[]{1});
+
+            // Assert
+            assertThat(result.words().getFirst().word()).isEqualTo("Current.");
+            server.verify(2, postRequestedFor(urlEqualTo("/api/v1/subtitles")));
         }
     }
 

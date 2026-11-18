@@ -85,10 +85,11 @@ bytes supports renamed media, but doesn't guarantee matches for trimmed or re-en
 I used one server lock to prevent duplicate transcriptions. It's simple, but chunks have to wait their turn. More
 detailed locking could allow parallel requests at the cost of more complexity.
 
-### Manual retries or automatic recovery
+### Limited automatic retries
 
-I kept playback running when subtitles fail, with an off/on toggle to retry. This avoids repeated requests on every
-frame, but needs user action after a failure.
+I kept playback running when subtitles fail and added up to three retries for temporary connection failures, with
+a three-second wait between attempts. Toggling subtitles off and on can retry after the limit. A provider may
+already have processed audio before a connection failed, so a retry can still incur another charge.
 
 ## Implementation Log
 
@@ -130,7 +131,7 @@ a little to keep them readable. Codex helped implement and review these rules.
 Added background loading and checks to stop results from an old video appearing on a new one. Loaded captions can be
 reused after pausing, seeking or toggling them off. Server errors leave playback running, toggling off and on retries
 the request. Codex helped implement this step and review the thread handling. This started with only the opening chunk,
-then was extended in step 8. Automatic retries are still to do.
+then was extended in step 8.
 
 ### 7. Reuse the decoding and effect setup
 
@@ -150,4 +151,11 @@ Kept the single subtitle worker and cached caption text rather than an image for
 off/on toggle before retrying, so a server error doesn't trigger requests on every frame. Basic tests cover later audio
 extraction, prefetching and seeking in the multithreaded player. Codex helped implement and review this step. Chunk
 boundaries can split a spoken phrase, and slow transcription can still leave gaps while captions load.
+
+### 9. Recover from interruptions and prepare the viva launch
+
+Added limited retries for subtitle connection failures. If removing a drive interrupts decoding, the multithreaded
+player keeps the last frame and position. Reconnect the drive at the same path and press Play to resume. Added a
+PowerShell launcher that reads the API key from a file without displaying it. Codex helped implement these changes.
+USB removal and reinsertion still need a physical check.
 

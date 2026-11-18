@@ -21,7 +21,12 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(SubtitleException.class)
     public ResponseEntity<ApiError> subtitleFailure(SubtitleException error, HttpServletRequest request) {
-        return response(error.getStatus().value(), error.getMessage(), request);
+        ResponseEntity<ApiError> result = response(error.getStatus().value(), error.getMessage(), request);
+        if (error.isRetryable()) {
+            return ResponseEntity.status(result.getStatusCode()).header("Retry-After", "3").body(result.getBody());
+        }
+
+        return result;
     }
 
     /**
